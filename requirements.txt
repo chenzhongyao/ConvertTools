@@ -1,5 +1,6 @@
-PyMuPDF>=1.23.0
-python-docx>=0.8.11
-Pillow>=10.0
-pytesseract>=0.3.10
-pywebview>=4.0
+PyMuPDF==1.24.11
+python-docx==1.1.2
+Pillow==10.4.0
+pytesseract==0.3.13
+pywebview==6.2.1
+pyinstaller==6.20.0
