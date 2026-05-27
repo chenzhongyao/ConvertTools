@@ -162,13 +162,14 @@
           <div class="setting-item">
             <label>页面模式</label>
             <select id="pageMode">
-              <option value="a4">A4标准页</option>
               <option value="original">原始比例</option>
+              <option value="a4">A4标准页</option>
             </select>
           </div>
           <div class="setting-item a4-option">
             <label>纸张方向</label>
             <select id="a4Orientation">
+              <option value="auto">自动</option>
               <option value="portrait">纵向</option>
               <option value="landscape">横向</option>
             </select>
@@ -237,6 +238,21 @@
 
         <div class="settings-group" id="mergeSettings" style="display:none;">
           <div class="merge-info" id="mergeInfo"></div>
+          <div class="setting-item">
+            <label>合并模式</label>
+            <select id="mergeMode">
+              <option value="original">原始大小拼接</option>
+              <option value="fit-a4">统一缩放到A4</option>
+            </select>
+          </div>
+          <div class="setting-item" id="mergeA4OrientationGroup" style="display:none;">
+            <label>A4方向</label>
+            <select id="mergeA4Orientation">
+              <option value="auto">自动</option>
+              <option value="portrait">纵向</option>
+              <option value="landscape">横向</option>
+            </select>
+          </div>
         </div>
 
         <div class="action-bar">

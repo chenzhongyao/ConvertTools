@@ -302,6 +302,13 @@
     }
   });
 
+  // Merge mode toggle
+  $('#mergeMode').addEventListener('change', () => {
+    const mode = $('#mergeMode').value;
+    const a4Group = $('#mergeA4OrientationGroup');
+    a4Group.style.display = mode === 'fit-a4' ? 'flex' : 'none';
+  });
+
   function updateBaseImageSelector() {
     const count = state.files.viewImageToPdf.length;
     const input = $('#baseImageIndex');
@@ -328,7 +335,7 @@
     if (window.pywebview && pywebview.api) {
       try {
         const paths = files.map((f) => f.path);
-        const result = await pywebview.api.check_pdf_page_sizes({ paths });
+        const result = await pywebview.api.check_merge_page_sizes(paths);
         if (result && result.success && result.warnings) {
           infoEl.innerHTML += `<br><span class="merge-warn">${result.warnings}</span>`;
         }
@@ -350,14 +357,15 @@
 
     if (window.pywebview && pywebview.api) {
       try {
-        const result = await pywebview.api.get_pdf_page_thumbnails({ path: pdfPath });
+        const result = await pywebview.api.get_pdf_page_thumbnails({ file_path: pdfPath });
         if (result && result.success) {
-          state.pageOrder = result.page_order || result.pages.map((_, i) => i);
-          state.pageRotations = result.page_rotations || {};
-          renderThumbnails(result.thumbnails || []);
+          state.pageOrder = result.page_order || result.thumbnails.map((_, i) => i);
+          state.pageRotations = result.rotations || {};
+          cachedThumbnails = result.thumbnails || [];
+          renderThumbnails(cachedThumbnails);
         } else if (result && result.need_password) {
           showPasswordModal(async (password) => {
-            const unlockResult = await pywebview.api.unlock_pdf({ path: pdfPath, password });
+            const unlockResult = await pywebview.api.unlock_pdf({ file_path: pdfPath, password: password });
             if (unlockResult && unlockResult.success) {
               loadThumbnails();
             } else {
@@ -465,9 +473,10 @@
     });
   }
 
+  let cachedThumbnails = [];
+
   function getCurrentThumbnails() {
-    // Return cached thumbnails if any
-    return [];
+    return cachedThumbnails;
   }
 
   function rotatePage(pageIdx) {
@@ -591,13 +600,13 @@
 
     try {
       const paths = files.map((f) => f.path);
-      const result = await pywebview.api.pdf_to_word({ paths });
+      const result = await pywebview.api.pdf_to_word({ files: paths });
 
       if (result.need_password) {
         hideLoading();
         showPasswordModal(async (password) => {
           showLoading('正在解锁并转换...');
-          const retry = await pywebview.api.pdf_to_word({ paths, password });
+          const retry = await pywebview.api.pdf_to_word({ files: paths, password });
           hideLoading();
           if (retry.success) {
             showSuccess('转换完成！');
@@ -637,13 +646,13 @@
 
     try {
       const paths = files.map((f) => f.path);
-      const result = await pywebview.api.pdf_to_image({ paths, format, dpi });
+      const result = await pywebview.api.pdf_to_image({ files: paths, format: format, dpi: dpi });
 
       if (result.need_password) {
         hideLoading();
         showPasswordModal(async (password) => {
           showLoading('正在解锁并转换...');
-          const retry = await pywebview.api.pdf_to_image({ paths, format, dpi, password });
+          const retry = await pywebview.api.pdf_to_image({ files: paths, format: format, dpi: dpi, password: password });
           hideLoading();
           if (retry.success) {
             showSuccess('转换完成！');
@@ -684,7 +693,7 @@
 
     try {
       const paths = files.map((f) => f.path);
-      const params = { paths, page_mode: pageMode, dpi };
+      const params = { files: paths, page_mode: pageMode, dpi: dpi };
       if (pageMode === 'a4') {
         params.a4_orientation = a4Orientation;
       } else {
@@ -715,9 +724,9 @@
 
     try {
       const result = await pywebview.api.reorder_pages({
-        path: state.pdfPath,
+        file_path: state.pdfPath,
         page_order: state.pageOrder,
-        page_rotations: state.pageRotations,
+        rotations: state.pageRotations,
       });
 
       hideLoading();
@@ -728,10 +737,10 @@
         showPasswordModal(async (password) => {
           showLoading('正在解锁并保存...');
           const retry = await pywebview.api.reorder_pages({
-            path: state.pdfPath,
+            file_path: state.pdfPath,
             page_order: state.pageOrder,
-            page_rotations: state.pageRotations,
-            password,
+            rotations: state.pageRotations,
+            password: password,
           });
           hideLoading();
           if (retry.success) {
@@ -764,14 +773,16 @@
 
     try {
       const paths = files.map((f) => f.path);
-      const result = await pywebview.api.merge_pdfs({ paths });
+      const mergeMode = $('#mergeMode').value;
+      const mergeA4Orientation = $('#mergeA4Orientation').value;
+      const result = await pywebview.api.merge_pdfs({ files: paths, merge_mode: mergeMode, a4_orientation: mergeA4Orientation });
 
       hideLoading();
 
       if (result.need_password) {
         showPasswordModal(async (password) => {
           showLoading('正在解锁并合并...');
-          const retry = await pywebview.api.merge_pdfs({ paths, password });
+          const retry = await pywebview.api.merge_pdfs({ files: paths, merge_mode: mergeMode, a4_orientation: mergeA4Orientation, password: password });
           hideLoading();
           if (retry.success) {
             showSuccess('合并完成！');
