@@ -480,6 +480,35 @@ html, body {
   flex-shrink: 0;
 }
 
+/* --- Move Page Row --- */
+.move-page-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.move-page-row input[type="number"] {
+  height: 32px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font);
+  outline: none;
+  text-align: center;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.move-page-row input[type="number"]:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
 /* --- Action Bar --- */
 .action-bar {
   margin-top: 24px;

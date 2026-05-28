@@ -119,12 +119,18 @@
     }
 
     zone.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      zone.classList.add('drag-over');
+      // Only accept external file drags (not internal reorder drags)
+      if (e.dataTransfer.types.includes('Files')) {
+        e.preventDefault();
+        zone.classList.add('drag-over');
+      }
     });
 
-    zone.addEventListener('dragleave', () => {
-      zone.classList.remove('drag-over');
+    zone.addEventListener('dragleave', (e) => {
+      // Only remove highlight if leaving the zone entirely
+      if (!zone.contains(e.relatedTarget)) {
+        zone.classList.remove('drag-over');
+      }
     });
 
     zone.addEventListener('drop', (e) => {
@@ -132,24 +138,24 @@
       e.stopPropagation();
       zone.classList.remove('drag-over');
 
-      // In PyWebView, dropped files may not expose .path on all platforms.
-      // Prefer pywebview dialog if browser File objects lack .path.
+      // Ignore internal reorder drags (they set effectAllowed='move')
+      if (e.dataTransfer.effectAllowed === 'move') return;
+
       const files = Array.from(e.dataTransfer.files);
       if (files.length) {
-        // Check if we have real paths (PyWebView sets .path on File objects)
-        const hasPaths = files.every((f) => f.path);
+        // In PyWebView, dropped files expose .path property
+        const hasPaths = files.some((f) => f.path);
         if (hasPaths) {
           addFiles(viewId, files, false);
         } else {
-          // Browser doesn't expose file paths - use pywebview dialog instead
+          // Browser doesn't expose file paths - fall back to pywebview dialog
           openPywebviewFileDialog(zoneId, viewId, fileTypes);
         }
       }
     });
 
-    // Click to open file dialog - prevent infinite loop by stopping propagation
+    // Click to open file dialog
     zone.addEventListener('click', (e) => {
-      // Don't trigger if click originated from the file input itself
       if (e.target === input) return;
       e.preventDefault();
       e.stopPropagation();
@@ -157,14 +163,12 @@
       if (window.pywebview && pywebview.api) {
         openPywebviewFileDialog(zoneId, viewId, fileTypes);
       } else {
-        // Fallback: use native file input
         if (input) input.click();
       }
     });
 
-    // Native file input change handler (fallback when pywebview not available)
+    // Native file input handler (fallback)
     if (input) {
-      // Prevent the file input click from bubbling up and re-triggering the zone click
       input.addEventListener('click', (e) => {
         e.stopPropagation();
       });
@@ -313,11 +317,17 @@
   function setupDragReorder(listEl, viewId) {
     let dragIdx = null;
 
+    listEl.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
+
     listEl.querySelectorAll('.file-item').forEach((item) => {
       item.addEventListener('dragstart', (e) => {
         dragIdx = parseInt(item.dataset.index, 10);
         item.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', 'reorder');
       });
 
       item.addEventListener('dragend', () => {
@@ -325,13 +335,9 @@
         dragIdx = null;
       });
 
-      item.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-      });
-
       item.addEventListener('drop', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         const dropIdx = parseInt(item.dataset.index, 10);
         if (dragIdx !== null && dragIdx !== dropIdx) {
           const arr = state.files[viewId];
@@ -511,18 +517,24 @@
 
   function setupThumbnailDragReorder() {
     const grid = $('#thumbnailGrid');
-    let dragIdx = null;
+    let dragDisplayIdx = null;
+
+    grid.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    });
 
     grid.querySelectorAll('.thumb-card').forEach((card) => {
       card.addEventListener('dragstart', (e) => {
-        dragIdx = parseInt(card.dataset.displayIndex, 10);
+        dragDisplayIdx = parseInt(card.dataset.displayIndex, 10);
         card.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', 'thumb-reorder');
       });
 
       card.addEventListener('dragend', () => {
         card.classList.remove('dragging');
-        dragIdx = null;
+        dragDisplayIdx = null;
       });
 
       card.addEventListener('dragover', (e) => {
@@ -532,10 +544,11 @@
 
       card.addEventListener('drop', (e) => {
         e.preventDefault();
-        const dropIdx = parseInt(card.dataset.displayIndex, 10);
-        if (dragIdx !== null && dragIdx !== dropIdx) {
-          const [moved] = state.pageOrder.splice(dragIdx, 1);
-          state.pageOrder.splice(dropIdx, 0, moved);
+        e.stopPropagation();
+        const dropDisplayIdx = parseInt(card.dataset.displayIndex, 10);
+        if (dragDisplayIdx !== null && dragDisplayIdx !== dropDisplayIdx) {
+          const [moved] = state.pageOrder.splice(dragDisplayIdx, 1);
+          state.pageOrder.splice(dropDisplayIdx, 0, moved);
           renderThumbnails(getCurrentThumbnails());
         }
       });
@@ -574,6 +587,24 @@
     const toDelete = new Set(indices.map((n) => n - 1));
     state.pageOrder = state.pageOrder.filter((idx) => !toDelete.has(idx));
     $('#deleteRange').value = '';
+    renderThumbnails(getCurrentThumbnails());
+  });
+
+  // Move page
+  $('#btnMovePage').addEventListener('click', () => {
+    const from = parseInt($('#movePageFrom').value, 10);
+    const to = parseInt($('#movePageTo').value, 10);
+    if (isNaN(from) || isNaN(to) || from < 1 || to < 1 || from > state.pageOrder.length || to > state.pageOrder.length) {
+      alert('请输入有效的页码范围（1~' + state.pageOrder.length + '）');
+      return;
+    }
+    // from/to are 1-based display positions
+    const fromIdx = from - 1;
+    const toIdx = to - 1;
+    const [moved] = state.pageOrder.splice(fromIdx, 1);
+    state.pageOrder.splice(toIdx, 0, moved);
+    $('#movePageFrom').value = '';
+    $('#movePageTo').value = '';
     renderThumbnails(getCurrentThumbnails());
   });
 
