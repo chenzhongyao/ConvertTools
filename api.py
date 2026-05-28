@@ -191,6 +191,61 @@ class Api:
             out = dest
         return {'success': True, 'output_path': out}
 
+    # --- Split PDF ---
+
+    def get_pdf_page_count(self, params):
+        """params: {file_path: str, password: str|null}"""
+        fpath = params.get('file_path')
+        password = params.get('password')
+        count, needs_pw, err = PdfEngine.get_page_count(fpath, password)
+        if needs_pw:
+            return {'success': False, 'need_password': True, 'error': err}
+        if err:
+            return {'success': False, 'error': err}
+        return {'success': True, 'page_count': count}
+
+    def split_pdf(self, params):
+        """params: {file_path: str, ranges: str, output_dir: str|null, password: str|null}
+        ranges format: "1-3, 4-6, 7-10" (1-based, inclusive)"""
+        fpath = params.get('file_path')
+        if not fpath:
+            return {'success': False, 'error': '未选择文件'}
+        ranges_str = params.get('ranges', '')
+        password = params.get('password')
+        output_dir = params.get('output_dir')
+
+        # Parse ranges string like "1-3, 4-6, 7-10"
+        parsed_ranges = []
+        for part in ranges_str.split(','):
+            part = part.strip()
+            if '-' in part:
+                segs = part.split('-')
+                if len(segs) == 2:
+                    try:
+                        start = int(segs[0].strip())
+                        end = int(segs[1].strip())
+                        if start > 0 and end >= start:
+                            parsed_ranges.append((start, end))
+                    except ValueError:
+                        return {'success': False, 'error': f'无效的范围: {part}'}
+            else:
+                try:
+                    n = int(part)
+                    if n > 0:
+                        parsed_ranges.append((n, n))
+                except ValueError:
+                    return {'success': False, 'error': f'无效的范围: {part}'}
+
+        if not parsed_ranges:
+            return {'success': False, 'error': '请输入有效的拆分范围'}
+
+        paths, needs_pw, err = PdfEngine.split_pdf(fpath, parsed_ranges, output_dir, password)
+        if needs_pw:
+            return {'success': False, 'need_password': True, 'error': err}
+        if err:
+            return {'success': False, 'error': err}
+        return {'success': True, 'output_paths': paths, 'output_count': len(paths)}
+
     # --- Encryption ---
 
     def check_pdf_encrypted(self, params):

@@ -212,6 +212,29 @@ class PdfEngine:
         return len(sizes) <= 1, list(sizes)
 
     @staticmethod
+    def split_pdf(file_path, ranges, output_dir=None, password=None):
+        """Split a PDF into multiple PDFs by page ranges.
+        ranges: list of (start, end) tuples, 1-based inclusive.
+        Returns list of output paths."""
+        doc, needs_pw, err = PdfEngine.open_pdf(file_path, password)
+        if err:
+            return [], needs_pw, err
+
+        output_paths = []
+        for start, end in ranges:
+            new_doc = fitz.open()
+            for page_idx in range(start - 1, end):  # convert to 0-based
+                if page_idx < doc.page_count:
+                    new_doc.insert_pdf(doc, from_page=page_idx, to_page=page_idx)
+            out_path = get_output_path(file_path, f'_p{start}-{end}.pdf', output_dir)
+            new_doc.save(out_path)
+            new_doc.close()
+            output_paths.append(out_path)
+
+        doc.close()
+        return output_paths, False, None
+
+    @staticmethod
     def get_page_sizes(file_path, password=None):
         """Get width, height (in points) for each page."""
         doc, needs_pw, err = PdfEngine.open_pdf(file_path, password)

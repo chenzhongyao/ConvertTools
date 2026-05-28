@@ -19,6 +19,7 @@
     pdfPath: null,       // current PDF in Page Manager
     pdfPassword: null,   // password for encrypted PDF in Page Manager
     passwordCallback: null,
+    isInternalDrag: false,  // flag to distinguish internal reorder from external file drop
   };
 
   const viewTitles = {
@@ -28,6 +29,7 @@
     viewImageToPdf: '图片转PDF',
     viewPageManager: '页面操作',
     viewMergePdf: '合并PDF',
+    viewSplitPdf: '拆分PDF',
   };
 
   // ---- DOM Refs ----
@@ -118,16 +120,17 @@
       input.accept = fileTypes || '*';
     }
 
+    // dragover: only respond if it's an external file drag (not internal reorder)
     zone.addEventListener('dragover', (e) => {
-      // Only accept external file drags (not internal reorder drags)
+      if (state.isInternalDrag) return;  // ignore internal reorder drags
       if (e.dataTransfer.types.includes('Files')) {
         e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
         zone.classList.add('drag-over');
       }
     });
 
     zone.addEventListener('dragleave', (e) => {
-      // Only remove highlight if leaving the zone entirely
       if (!zone.contains(e.relatedTarget)) {
         zone.classList.remove('drag-over');
       }
@@ -135,11 +138,10 @@
 
     zone.addEventListener('drop', (e) => {
       e.preventDefault();
-      e.stopPropagation();
       zone.classList.remove('drag-over');
 
-      // Ignore internal reorder drags (they set effectAllowed='move')
-      if (e.dataTransfer.effectAllowed === 'move') return;
+      // Skip internal reorder drags entirely
+      if (state.isInternalDrag) return;
 
       const files = Array.from(e.dataTransfer.files);
       if (files.length) {
@@ -156,18 +158,20 @@
 
     // Click to open file dialog
     zone.addEventListener('click', (e) => {
+      // Don't re-trigger if clicking on the hidden input itself
       if (e.target === input) return;
+
       e.preventDefault();
       e.stopPropagation();
 
       if (window.pywebview && pywebview.api) {
         openPywebviewFileDialog(zoneId, viewId, fileTypes);
-      } else {
-        if (input) input.click();
+      } else if (input) {
+        input.click();
       }
     });
 
-    // Native file input handler (fallback)
+    // Prevent the hidden file input from bubbling click back to zone
     if (input) {
       input.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -198,10 +202,10 @@
   function addFiles(viewId, files, isPathObjects) {
     if (!state.files[viewId]) state.files[viewId] = [];
 
-    // Page Manager only allows single PDF
-    if (viewId === 'viewPageManager') {
+    // Page Manager and Split PDF only allow single PDF
+    if (viewId === 'viewPageManager' || viewId === 'viewSplitPdf') {
       state.files[viewId] = [];
-      state.pdfPassword = null;
+      if (viewId === 'viewPageManager') state.pdfPassword = null;
     }
 
     const items = isPathObjects
@@ -228,6 +232,13 @@
     // Image to PDF: update base image range
     if (viewId === 'viewImageToPdf') {
       updateBaseImageSelector();
+    }
+
+    // Split PDF: update page count info and show settings
+    if (viewId === 'viewSplitPdf') {
+      updateSplitInfo();
+      const settingsEl = $('#splitSettings');
+      if (settingsEl && state.files[viewId].length > 0) settingsEl.style.display = 'block';
     }
   }
 
@@ -301,6 +312,7 @@
       viewPdfToImage: '#btnStartPdfToImage',
       viewImageToPdf: '#btnStartImageToPdf',
       viewMergePdf: '#btnStartMergePdf',
+      viewSplitPdf: '#btnStartSplitPdf',
     };
     const btn = document.querySelector(btnMap[viewId]);
     if (btn) btn.disabled = files.length === 0;
@@ -317,22 +329,29 @@
   function setupDragReorder(listEl, viewId) {
     let dragIdx = null;
 
-    listEl.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-    });
+    const items = listEl.querySelectorAll('.file-item');
 
-    listEl.querySelectorAll('.file-item').forEach((item) => {
+    items.forEach((item) => {
       item.addEventListener('dragstart', (e) => {
         dragIdx = parseInt(item.dataset.index, 10);
         item.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', 'reorder');
+        state.isInternalDrag = true;  // mark as internal drag
       });
 
       item.addEventListener('dragend', () => {
         item.classList.remove('dragging');
         dragIdx = null;
+        // Reset internal drag flag after a short delay (allows drop events to finish)
+        setTimeout(() => { state.isInternalDrag = false; }, 50);
+      });
+
+      item.addEventListener('dragover', (e) => {
+        if (!state.isInternalDrag) return;  // only handle internal drags
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
       });
 
       item.addEventListener('drop', (e) => {
@@ -345,6 +364,7 @@
           arr.splice(dropIdx, 0, moved);
           renderFileList(viewId);
         }
+        state.isInternalDrag = false;
       });
     });
   }
@@ -355,6 +375,7 @@
   setupDropZone('dropImageToPdf', 'viewImageToPdf', '.jpg,.jpeg,.png');
   setupDropZone('dropPageManager', 'viewPageManager', '.pdf', false);
   setupDropZone('dropMergePdf', 'viewMergePdf', '.pdf');
+  setupDropZone('dropSplitPdf', 'viewSplitPdf', '.pdf', false);
 
   // ---- Page Mode Toggle (Image to PDF) ----
   $('#pageMode').addEventListener('change', () => {
@@ -479,7 +500,7 @@
         return `
         <div class="thumb-card" data-page-index="${pageIdx}" data-display-index="${displayIdx}" draggable="true">
           ${imgTag}
-          <div class="thumb-label">第 ${pageIdx + 1} 页</div>
+          <div class="thumb-label">第 ${displayIdx + 1} 页</div>
           <div class="thumb-actions">
             <button class="thumb-rotate" data-page-index="${pageIdx}" title="旋转90°">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
@@ -497,6 +518,7 @@
     grid.querySelectorAll('.thumb-rotate').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        e.preventDefault();
         const idx = parseInt(btn.dataset.pageIndex, 10);
         rotatePage(idx);
       });
@@ -506,6 +528,7 @@
     grid.querySelectorAll('.thumb-delete').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
+        e.preventDefault();
         const idx = parseInt(btn.dataset.pageIndex, 10);
         deleteSinglePage(idx);
       });
@@ -519,26 +542,27 @@
     const grid = $('#thumbnailGrid');
     let dragDisplayIdx = null;
 
-    grid.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-    });
+    const cards = grid.querySelectorAll('.thumb-card');
 
-    grid.querySelectorAll('.thumb-card').forEach((card) => {
+    cards.forEach((card) => {
       card.addEventListener('dragstart', (e) => {
         dragDisplayIdx = parseInt(card.dataset.displayIndex, 10);
         card.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', 'thumb-reorder');
+        state.isInternalDrag = true;
       });
 
       card.addEventListener('dragend', () => {
         card.classList.remove('dragging');
         dragDisplayIdx = null;
+        setTimeout(() => { state.isInternalDrag = false; }, 50);
       });
 
       card.addEventListener('dragover', (e) => {
+        if (!state.isInternalDrag) return;
         e.preventDefault();
+        e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
       });
 
@@ -551,6 +575,7 @@
           state.pageOrder.splice(dropDisplayIdx, 0, moved);
           renderThumbnails(getCurrentThumbnails());
         }
+        state.isInternalDrag = false;
       });
     });
   }
@@ -909,6 +934,79 @@
         setProgress('progressMergePdf', 100, '合并完成');
       } else {
         alert(result.error || '合并失败');
+      }
+    } catch (err) {
+      hideLoading();
+      alert('发生错误: ' + err.message);
+    }
+  }
+
+  // ---- Feature Action: Split PDF ----
+  async function updateSplitInfo() {
+    const files = state.files.viewSplitPdf;
+    const infoEl = $('#splitInfo');
+    if (!files.length) {
+      infoEl.textContent = '';
+      return;
+    }
+
+    if (window.pywebview && pywebview.api) {
+      try {
+        const result = await pywebview.api.get_pdf_page_count({ file_path: files[0].path });
+        if (result.success) {
+          infoEl.textContent = `共 ${result.page_count} 页`;
+          $('#splitRanges').placeholder = `例如: 1-3, 4-6, 7-10（共${result.page_count}页）`;
+        }
+      } catch (err) {
+        // ignore
+      }
+    }
+  }
+
+  $('#btnStartSplitPdf').addEventListener('click', startSplitPdf);
+
+  async function startSplitPdf() {
+    const files = state.files.viewSplitPdf;
+    if (!files.length) return;
+
+    const rangesStr = $('#splitRanges').value.trim();
+    const outputDir = getOutputDir('outputDirSplitPdf');
+
+    if (!rangesStr) {
+      alert('请输入拆分范围');
+      return;
+    }
+
+    showLoading('正在拆分PDF...');
+
+    try {
+      const params = {
+        file_path: files[0].path,
+        ranges: rangesStr,
+        output_dir: outputDir,
+      };
+
+      const result = await pywebview.api.split_pdf(params);
+      hideLoading();
+
+      if (result.need_password) {
+        showPasswordModal(async (password) => {
+          showLoading('正在解锁并拆分...');
+          const retry = await pywebview.api.split_pdf({ ...params, password });
+          hideLoading();
+          if (retry.success) {
+            showSuccess(`拆分完成！生成了 ${retry.output_count} 个文件`);
+          } else {
+            alert(retry.error || '拆分失败');
+          }
+        });
+        return;
+      }
+
+      if (result.success) {
+        showSuccess(`拆分完成！生成了 ${result.output_count} 个文件`);
+      } else {
+        alert(result.error || '拆分失败');
       }
     } catch (err) {
       hideLoading();

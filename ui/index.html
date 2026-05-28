@@ -70,6 +70,16 @@
           </div>
         </div>
 
+        <div class="feature-card" data-view="viewSplitPdf">
+          <div class="feature-icon" style="background:linear-gradient(135deg,#2980B9,#1F618D);">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
+          </div>
+          <div class="feature-info">
+            <h3>拆分PDF</h3>
+            <p>按页码范围将PDF拆分为多个文件</p>
+          </div>
+        </div>
+
         <div class="feature-card" data-view="viewMergePdf">
           <div class="feature-icon" style="background:linear-gradient(135deg,#E74C3C,#C0392B);">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
@@ -255,6 +265,47 @@
 
         <div class="action-bar" id="pageManagerActions" style="display:none;">
           <button class="btn btn-primary btn-lg" id="btnSavePageManager">保存修改</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== Split PDF View ====== -->
+    <section id="viewSplitPdf" class="view">
+      <div class="view-container">
+        <div class="drop-zone" id="dropSplitPdf">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p>拖拽PDF文件到此处</p>
+          <span class="drop-hint">仅支持单个PDF文件</span>
+          <input type="file" accept=".pdf" style="display:none">
+        </div>
+
+        <div class="file-list" id="listSplitPdf"></div>
+
+        <div class="settings-group" id="splitSettings" style="display:none;">
+          <div class="merge-info" id="splitInfo"></div>
+          <div class="setting-item" style="flex:1 1 100%;">
+            <label>拆分范围</label>
+            <input type="text" id="splitRanges" placeholder="例如: 1-3, 4-6, 7-10">
+            <span class="setting-hint">用逗号分隔多段页码范围，每段生成一个独立PDF文件</span>
+          </div>
+          <div class="setting-item">
+            <label>输出目录</label>
+            <div class="output-dir-row">
+              <input type="text" id="outputDirSplitPdf" placeholder="与源文件同目录" readonly>
+              <button class="btn btn-secondary btn-sm" onclick="selectOutputDir('outputDirSplitPdf')">选择</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button class="btn btn-primary btn-lg" id="btnStartSplitPdf" disabled>开始拆分</button>
+        </div>
+
+        <div class="progress-area" id="progressSplitPdf" style="display:none;">
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" style="width:0%"></div>
+          </div>
+          <p class="progress-text">准备中...</p>
         </div>
       </div>
     </section>
