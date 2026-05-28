@@ -94,6 +94,16 @@
 
         <div class="file-list" id="listPdfToWord"></div>
 
+        <div class="settings-group">
+          <div class="setting-item">
+            <label>输出目录</label>
+            <div class="output-dir-row">
+              <input type="text" id="outputDirPdfToWord" placeholder="与源文件同目录" readonly>
+              <button class="btn btn-secondary btn-sm" onclick="selectOutputDir('outputDirPdfToWord')">选择</button>
+            </div>
+          </div>
+        </div>
+
         <div class="action-bar">
           <button class="btn btn-primary btn-lg" id="btnStartPdfToWord" disabled>开始转换</button>
         </div>
@@ -131,6 +141,13 @@
             <label>DPI</label>
             <input type="number" id="imgDpi" value="200" min="72" max="600" step="1">
           </div>
+          <div class="setting-item">
+            <label>输出目录</label>
+            <div class="output-dir-row">
+              <input type="text" id="outputDirPdfToImage" placeholder="与源文件同目录" readonly>
+              <button class="btn btn-secondary btn-sm" onclick="selectOutputDir('outputDirPdfToImage')">选择</button>
+            </div>
+          </div>
         </div>
 
         <div class="action-bar">
@@ -166,7 +183,7 @@
               <option value="a4">A4标准页</option>
             </select>
           </div>
-          <div class="setting-item a4-option">
+          <div class="setting-item a4-option" style="display:none;">
             <label>纸张方向</label>
             <select id="a4Orientation">
               <option value="auto">自动</option>
@@ -174,7 +191,7 @@
               <option value="landscape">横向</option>
             </select>
           </div>
-          <div class="setting-item original-option" style="display:none;">
+          <div class="setting-item original-option">
             <label>基准图片序号</label>
             <input type="number" id="baseImageIndex" value="1" min="1" step="1">
             <span class="setting-hint">以该图片尺寸作为页面大小</span>
@@ -182,6 +199,13 @@
           <div class="setting-item">
             <label>DPI</label>
             <input type="number" id="img2pdfDpi" value="200" min="72" max="600" step="1">
+          </div>
+          <div class="setting-item">
+            <label>输出目录</label>
+            <div class="output-dir-row">
+              <input type="text" id="outputDirImageToPdf" placeholder="与源文件同目录" readonly>
+              <button class="btn btn-secondary btn-sm" onclick="selectOutputDir('outputDirImageToPdf')">选择</button>
+            </div>
           </div>
         </div>
 
@@ -252,6 +276,13 @@
               <option value="portrait">纵向</option>
               <option value="landscape">横向</option>
             </select>
+          </div>
+          <div class="setting-item">
+            <label>输出目录</label>
+            <div class="output-dir-row">
+              <input type="text" id="outputDirMergePdf" placeholder="与源文件同目录" readonly>
+              <button class="btn btn-secondary btn-sm" onclick="selectOutputDir('outputDirMergePdf')">选择</button>
+            </div>
           </div>
         </div>
 

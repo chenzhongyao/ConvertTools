@@ -17,6 +17,7 @@
     pageOrder: [],       // array of page indices for Page Manager
     pageRotations: {},   // { pageIndex: degrees }
     pdfPath: null,       // current PDF in Page Manager
+    pdfPassword: null,   // password for encrypted PDF in Page Manager
     passwordCallback: null,
   };
 
@@ -32,6 +33,35 @@
   // ---- DOM Refs ----
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
+
+  // ---- XSS Sanitization ----
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // ---- Output Directory Selection ----
+  window.selectOutputDir = async function (inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (window.pywebview && pywebview.api) {
+      try {
+        const folder = await pywebview.api.select_folder();
+        if (folder) input.value = folder;
+      } catch (err) {
+        console.warn('select_folder failed:', err);
+      }
+    }
+  };
+
+  // Helper: read output dir value, return null if empty
+  function getOutputDir(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return null;
+    const val = (input.value || '').trim();
+    return val || null;
+  }
 
   // ---- Navigation ----
   function navigateTo(viewId) {
@@ -99,36 +129,65 @@
 
     zone.addEventListener('drop', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       zone.classList.remove('drag-over');
-      const files = Array.from(e.dataTransfer.files);
-      if (files.length) addFiles(viewId, files);
-    });
 
-    zone.addEventListener('click', async () => {
-      // Use pywebview file dialog if available, otherwise native input
-      if (window.pywebview && pywebview.api) {
-        try {
-          const exts = (fileTypes || '').split(',').map((f) => f.replace(/^\*\./, '').trim()).filter(Boolean);
-          const paths = await pywebview.api.select_files(exts.length ? exts : ['pdf']);
-          if (paths && paths.length) {
-            const fileObjects = paths.map((p) => ({ name: p.split(/[\\/]/).pop(), path: p, size: 0 }));
-            addFiles(viewId, fileObjects, true);
-          }
-        } catch (err) {
-          console.warn('pywebview file dialog failed, falling back to input', err);
-          input && input.click();
+      // In PyWebView, dropped files may not expose .path on all platforms.
+      // Prefer pywebview dialog if browser File objects lack .path.
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length) {
+        // Check if we have real paths (PyWebView sets .path on File objects)
+        const hasPaths = files.every((f) => f.path);
+        if (hasPaths) {
+          addFiles(viewId, files, false);
+        } else {
+          // Browser doesn't expose file paths - use pywebview dialog instead
+          openPywebviewFileDialog(zoneId, viewId, fileTypes);
         }
-      } else {
-        input && input.click();
       }
     });
 
+    // Click to open file dialog - prevent infinite loop by stopping propagation
+    zone.addEventListener('click', (e) => {
+      // Don't trigger if click originated from the file input itself
+      if (e.target === input) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (window.pywebview && pywebview.api) {
+        openPywebviewFileDialog(zoneId, viewId, fileTypes);
+      } else {
+        // Fallback: use native file input
+        if (input) input.click();
+      }
+    });
+
+    // Native file input change handler (fallback when pywebview not available)
     if (input) {
+      // Prevent the file input click from bubbling up and re-triggering the zone click
+      input.addEventListener('click', (e) => {
+        e.stopPropagation();
+      });
+
       input.addEventListener('change', () => {
         const files = Array.from(input.files);
-        if (files.length) addFiles(viewId, files);
+        if (files.length) addFiles(viewId, files, false);
         input.value = '';
       });
+    }
+  }
+
+  async function openPywebviewFileDialog(zoneId, viewId, fileTypes) {
+    if (!window.pywebview || !pywebview.api) return;
+    try {
+      const exts = (fileTypes || '').split(',').map((f) => f.replace(/^\*?\./, '').trim()).filter(Boolean);
+      const paths = await pywebview.api.select_files(exts.length ? exts : ['pdf']);
+      if (paths && paths.length) {
+        const fileObjects = paths.map((p) => ({ name: p.split(/[\\/]/).pop(), path: p, size: 0 }));
+        addFiles(viewId, fileObjects, true);
+      }
+    } catch (err) {
+      console.warn('pywebview file dialog failed:', err);
     }
   }
 
@@ -138,13 +197,17 @@
     // Page Manager only allows single PDF
     if (viewId === 'viewPageManager') {
       state.files[viewId] = [];
+      state.pdfPassword = null;
     }
 
     const items = isPathObjects
       ? files.map((f) => ({ name: f.name, path: f.path, size: f.size || 0 }))
-      : files.map((f) => ({ name: f.name, path: f.path || f.name, size: f.size }));
+      : files.map((f) => ({ name: f.name, path: f.path || '', size: f.size }));
 
-    state.files[viewId].push(...items);
+    // Filter out files without paths (can't process them)
+    const validItems = items.filter((f) => f.path);
+
+    state.files[viewId].push(...validItems);
     renderFileList(viewId);
     updateButtonStates(viewId);
 
@@ -204,7 +267,7 @@
         <div class="file-icon">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         </div>
-        <span class="file-name" title="${f.name}">${f.name}</span>
+        <span class="file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
         ${f.size ? `<span class="file-size">${formatSize(f.size)}</span>` : ''}
         <button class="file-remove" data-index="${i}" title="移除">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -336,8 +399,8 @@
       try {
         const paths = files.map((f) => f.path);
         const result = await pywebview.api.check_merge_page_sizes(paths);
-        if (result && result.success && result.warnings) {
-          infoEl.innerHTML += `<br><span class="merge-warn">${result.warnings}</span>`;
+        if (result && result.success && !result.uniform) {
+          infoEl.innerHTML += `<br><span class="merge-warn">检测到页面尺寸不一致，建议使用「统一缩放到A4」模式</span>`;
         }
       } catch (err) {
         // Silently ignore
@@ -357,7 +420,10 @@
 
     if (window.pywebview && pywebview.api) {
       try {
-        const result = await pywebview.api.get_pdf_page_thumbnails({ file_path: pdfPath });
+        const params = { file_path: pdfPath };
+        if (state.pdfPassword) params.password = state.pdfPassword;
+
+        const result = await pywebview.api.get_pdf_page_thumbnails(params);
         if (result && result.success) {
           state.pageOrder = result.page_order || result.thumbnails.map((_, i) => i);
           state.pageRotations = result.rotations || {};
@@ -365,16 +431,17 @@
           renderThumbnails(cachedThumbnails);
         } else if (result && result.need_password) {
           showPasswordModal(async (password) => {
+            state.pdfPassword = password;
             const unlockResult = await pywebview.api.unlock_pdf({ file_path: pdfPath, password: password });
             if (unlockResult && unlockResult.success) {
-              loadThumbnails();
+              loadThumbnails(); // Now uses state.pdfPassword
             } else {
               alert('密码错误，请重试');
             }
           });
           grid.innerHTML = '<div class="empty-state">文件已加密，请输入密码</div>';
         } else {
-          grid.innerHTML = `<div class="empty-state">${result?.error || '无法加载缩略图'}</div>`;
+          grid.innerHTML = `<div class="empty-state">${escapeHtml(result?.error || '无法加载缩略图')}</div>`;
         }
       } catch (err) {
         grid.innerHTML = '<div class="empty-state">加载缩略图失败</div>';
@@ -400,7 +467,9 @@
       .map((pageIdx, displayIdx) => {
         const rotation = state.pageRotations[pageIdx] || 0;
         const src = thumbnailPaths[pageIdx] || '';
-        const imgTag = src ? `<img src="${src}" style="transform:rotate(${rotation}deg)" alt="Page ${pageIdx + 1}">` : `<div class="empty-state" style="aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;">${pageIdx + 1}</div>`;
+        const imgTag = src
+          ? `<img src="${src}" style="transform:rotate(${rotation}deg)" alt="Page ${pageIdx + 1}">`
+          : `<div class="empty-state" style="aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;">${pageIdx + 1}</div>`;
         return `
         <div class="thumb-card" data-page-index="${pageIdx}" data-display-index="${displayIdx}" draggable="true">
           ${imgTag}
@@ -598,15 +667,17 @@
     showLoading('正在转换PDF为Word...');
     setProgress('progressPdfToWord', 0, '准备中...');
 
+    const outputDir = getOutputDir('outputDirPdfToWord');
+
     try {
       const paths = files.map((f) => f.path);
-      const result = await pywebview.api.pdf_to_word({ files: paths });
+      const result = await pywebview.api.pdf_to_word({ files: paths, output_dir: outputDir });
 
       if (result.need_password) {
         hideLoading();
         showPasswordModal(async (password) => {
           showLoading('正在解锁并转换...');
-          const retry = await pywebview.api.pdf_to_word({ files: paths, password });
+          const retry = await pywebview.api.pdf_to_word({ files: paths, password, output_dir: outputDir });
           hideLoading();
           if (retry.success) {
             showSuccess('转换完成！');
@@ -640,19 +711,20 @@
 
     const format = $('#imgFormat').value;
     const dpi = parseInt($('#imgDpi').value, 10) || 200;
+    const outputDir = getOutputDir('outputDirPdfToImage');
 
     showLoading('正在转换PDF为图片...');
     setProgress('progressPdfToImage', 0, '准备中...');
 
     try {
       const paths = files.map((f) => f.path);
-      const result = await pywebview.api.pdf_to_image({ files: paths, format: format, dpi: dpi });
+      const result = await pywebview.api.pdf_to_image({ files: paths, format: format, dpi: dpi, output_dir: outputDir });
 
       if (result.need_password) {
         hideLoading();
         showPasswordModal(async (password) => {
           showLoading('正在解锁并转换...');
-          const retry = await pywebview.api.pdf_to_image({ files: paths, format: format, dpi: dpi, password: password });
+          const retry = await pywebview.api.pdf_to_image({ files: paths, format: format, dpi: dpi, password: password, output_dir: outputDir });
           hideLoading();
           if (retry.success) {
             showSuccess('转换完成！');
@@ -688,12 +760,13 @@
     const a4Orientation = $('#a4Orientation').value;
     const baseImageIndex = parseInt($('#baseImageIndex').value, 10) || 1;
     const dpi = parseInt($('#img2pdfDpi').value, 10) || 200;
+    const outputDir = getOutputDir('outputDirImageToPdf');
 
     showLoading('正在生成PDF...');
 
     try {
       const paths = files.map((f) => f.path);
-      const params = { files: paths, page_mode: pageMode, dpi: dpi };
+      const params = { files: paths, page_mode: pageMode, dpi: dpi, output_dir: outputDir };
       if (pageMode === 'a4') {
         params.a4_orientation = a4Orientation;
       } else {
@@ -723,11 +796,14 @@
     showLoading('正在保存修改...');
 
     try {
-      const result = await pywebview.api.reorder_pages({
+      const params = {
         file_path: state.pdfPath,
         page_order: state.pageOrder,
         rotations: state.pageRotations,
-      });
+      };
+      if (state.pdfPassword) params.password = state.pdfPassword;
+
+      const result = await pywebview.api.reorder_pages(params);
 
       hideLoading();
 
@@ -735,6 +811,7 @@
         showSuccess('保存成功！');
       } else if (result.need_password) {
         showPasswordModal(async (password) => {
+          state.pdfPassword = password;
           showLoading('正在解锁并保存...');
           const retry = await pywebview.api.reorder_pages({
             file_path: state.pdfPath,
@@ -768,21 +845,23 @@
       return;
     }
 
+    const mergeMode = $('#mergeMode').value;
+    const mergeA4Orientation = $('#mergeA4Orientation').value;
+    const outputDir = getOutputDir('outputDirMergePdf');
+
     showLoading('正在合并PDF...');
     setProgress('progressMergePdf', 0, '准备中...');
 
     try {
       const paths = files.map((f) => f.path);
-      const mergeMode = $('#mergeMode').value;
-      const mergeA4Orientation = $('#mergeA4Orientation').value;
-      const result = await pywebview.api.merge_pdfs({ files: paths, merge_mode: mergeMode, a4_orientation: mergeA4Orientation });
+      const result = await pywebview.api.merge_pdfs({ files: paths, merge_mode: mergeMode, a4_orientation: mergeA4Orientation, output_dir: outputDir });
 
       hideLoading();
 
       if (result.need_password) {
         showPasswordModal(async (password) => {
           showLoading('正在解锁并合并...');
-          const retry = await pywebview.api.merge_pdfs({ files: paths, merge_mode: mergeMode, a4_orientation: mergeA4Orientation, password: password });
+          const retry = await pywebview.api.merge_pdfs({ files: paths, merge_mode: mergeMode, a4_orientation: mergeA4Orientation, password: password, output_dir: outputDir });
           hideLoading();
           if (retry.success) {
             showSuccess('合并完成！');

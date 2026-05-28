@@ -465,6 +465,21 @@ html, body {
   color: var(--text-muted);
 }
 
+.output-dir-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.output-dir-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.output-dir-row .btn {
+  flex-shrink: 0;
+}
+
 /* --- Action Bar --- */
 .action-bar {
   margin-top: 24px;
