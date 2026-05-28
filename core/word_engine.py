@@ -9,11 +9,12 @@ class WordEngine:
     """Generate Word documents from extracted PDF content."""
 
     @staticmethod
-    def create_from_pages(pages, output_path=None, input_path=None, ocr_texts=None):
+    def create_from_pages(pages, output_path=None, input_path=None, ocr_texts=None, output_dir=None):
         """Create a Word document from extracted page data.
 
         pages: list of dicts with 'text', 'images', 'page_num' from PdfEngine.extract_text_and_images
         ocr_texts: optional dict mapping page_num -> OCR text (for scanned pages)
+        output_dir: optional directory to save the output file
         """
         doc = Document()
 
@@ -46,6 +47,6 @@ class WordEngine:
                 doc.add_page_break()
 
         if not output_path:
-            output_path = get_output_path(input_path or 'output', '.docx')
+            output_path = get_output_path(input_path or 'output', '.docx', output_dir)
         doc.save(output_path)
         return output_path
