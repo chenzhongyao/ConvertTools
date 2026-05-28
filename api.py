@@ -22,11 +22,12 @@ class Api:
     def select_files(self, file_types):
         if not self._window:
             return []
-        exts = [f"*.{ft.lstrip('.')}" for ft in file_types]
+        exts = ';'.join(f"*.{ft.lstrip('.')}" for ft in file_types)
+        file_types_tuple = (f'Files ({exts})',)
         result = self._window.create_file_dialog(
             webview.OPEN_DIALOG,
             allow_multiple=True,
-            file_types=(f'Files ({" ".join(exts)})',)
+            file_types=file_types_tuple
         )
         return list(result) if result else []
 
