@@ -334,12 +334,13 @@
     if (viewId === 'viewPageManager') {
       const hasPdf = files.length > 0;
       $('#pageToolbar').style.display = hasPdf ? 'flex' : 'none';
+      $('#pageManagerSettings').style.display = hasPdf ? 'block' : 'none';
       $('#pageManagerActions').style.display = hasPdf ? 'flex' : 'none';
     }
   }
 
   // ---- Drag Reorder for File Lists (mouse events) ----
-  let fileListDragState = null; // shared singleton to avoid duplicate listeners
+  let fileListDragState = null;
 
   function setupFileListReorder(listEl, viewId) {
     listEl.querySelectorAll('.file-item').forEach((item) => {
@@ -354,9 +355,28 @@
           dragItem: item,
           startY: e.clientY,
           isDragging: false,
+          placeholder: null,
         };
       });
     });
+  }
+
+  // Remove any existing drop indicator
+  function removeFileListDropIndicator() {
+    const existing = document.querySelector('.drop-indicator');
+    if (existing) existing.remove();
+  }
+
+  // Insert a visual drop indicator line before or after an element
+  function showFileListDropIndicator(listEl, referenceNode, before) {
+    removeFileListDropIndicator();
+    const indicator = document.createElement('div');
+    indicator.className = 'drop-indicator';
+    if (before) {
+      listEl.insertBefore(indicator, referenceNode);
+    } else {
+      listEl.insertBefore(indicator, referenceNode.nextSibling);
+    }
   }
 
   // Single pair of document-level listeners for file list drag
@@ -383,10 +403,14 @@
     if (targetItem) {
       const targetRect = targetItem.getBoundingClientRect();
       const midY = targetRect.top + targetRect.height / 2;
-      if (e.clientY < midY) {
-        ds.listEl.insertBefore(ds.dragItem, targetItem);
+      const before = e.clientY < midY;
+      showFileListDropIndicator(ds.listEl, targetItem, before);
+    } else {
+      // If below all items, show indicator at end
+      if (items.length > 0 && e.clientY > items[items.length - 1].getBoundingClientRect().bottom) {
+        showFileListDropIndicator(ds.listEl, items[items.length - 1], false);
       } else {
-        ds.listEl.insertBefore(ds.dragItem, targetItem.nextSibling);
+        removeFileListDropIndicator();
       }
     }
   });
@@ -397,6 +421,16 @@
 
     if (ds.isDragging) {
       ds.dragItem.classList.remove('dragging');
+
+      // Insert drag item at the indicator position
+      const indicator = ds.listEl.querySelector('.drop-indicator');
+      if (indicator) {
+        ds.listEl.insertBefore(ds.dragItem, indicator);
+        indicator.remove();
+      } else {
+        removeFileListDropIndicator();
+      }
+
       const newOrder = [...ds.listEl.querySelectorAll('.file-item')].map(
         (el) => parseInt(el.dataset.index, 10)
       );
@@ -578,14 +612,13 @@
   }
 
   // ---- Thumbnail Drag Reorder (mouse events, not HTML5 DnD) ----
-  let thumbDragState = null; // shared singleton to avoid duplicate listeners
+  let thumbDragState = null;
 
   function setupThumbnailDragReorder() {
     const grid = $('#thumbnailGrid');
 
     grid.querySelectorAll('.thumb-card').forEach((card) => {
       card.addEventListener('mousedown', (e) => {
-        // Don't start drag on action buttons
         if (e.target.closest('.thumb-actions')) return;
 
         thumbDragState = {
@@ -597,6 +630,12 @@
         };
       });
     });
+  }
+
+  // Remove any existing thumbnail drop indicator
+  function removeThumbDropIndicator() {
+    const existing = document.querySelector('.thumb-drop-indicator');
+    if (existing) existing.remove();
   }
 
   // Single pair of document-level listeners for thumbnail drag
@@ -626,13 +665,24 @@
       }
     }
 
+    removeThumbDropIndicator();
     if (targetCard) {
       const targetRect = targetCard.getBoundingClientRect();
       const midX = targetRect.left + targetRect.width / 2;
+      const indicator = document.createElement('div');
+      indicator.className = 'thumb-drop-indicator';
       if (e.clientX < midX) {
-        grid.insertBefore(ds.dragCard, targetCard);
+        grid.insertBefore(indicator, targetCard);
       } else {
-        grid.insertBefore(ds.dragCard, targetCard.nextSibling);
+        grid.insertBefore(indicator, targetCard.nextSibling);
+      }
+    } else if (cards.length > 0) {
+      // Below all cards
+      const lastRect = cards[cards.length - 1].getBoundingClientRect();
+      if (e.clientY > lastRect.bottom || (e.clientX > lastRect.right && e.clientY > lastRect.top)) {
+        const indicator = document.createElement('div');
+        indicator.className = 'thumb-drop-indicator';
+        grid.insertBefore(indicator, cards[cards.length - 1].nextSibling);
       }
     }
   });
@@ -645,6 +695,12 @@
       ds.dragCard.classList.remove('dragging');
 
       const grid = $('#thumbnailGrid');
+      const indicator = grid.querySelector('.thumb-drop-indicator');
+      if (indicator) {
+        grid.insertBefore(ds.dragCard, indicator);
+        indicator.remove();
+      }
+
       const newDisplayOrder = [...grid.querySelectorAll('.thumb-card')].map(
         (c) => parseInt(c.dataset.pageIndex, 10)
       );
@@ -922,13 +978,16 @@
   async function savePageManager() {
     if (!state.pdfPath) return;
 
-    showLoading('正在保存修改...');
+    showLoading('正在导出PDF...');
+
+    const outputDir = getOutputDir('outputDirPageManager');
 
     try {
       const params = {
         file_path: state.pdfPath,
         page_order: state.pageOrder,
         rotations: state.pageRotations,
+        output_dir: outputDir,
       };
       if (state.pdfPassword) params.password = state.pdfPassword;
 
@@ -937,26 +996,27 @@
       hideLoading();
 
       if (result.success) {
-        showSuccess('保存成功！');
+        showSuccess('导出成功！文件已保存至: ' + (result.output_path || ''));
       } else if (result.need_password) {
         showPasswordModal(async (password) => {
           state.pdfPassword = password;
-          showLoading('正在解锁并保存...');
+          showLoading('正在解锁并导出...');
           const retry = await pywebview.api.reorder_pages({
             file_path: state.pdfPath,
             page_order: state.pageOrder,
             rotations: state.pageRotations,
             password: password,
+            output_dir: outputDir,
           });
           hideLoading();
           if (retry.success) {
-            showSuccess('保存成功！');
+            showSuccess('导出成功！文件已保存至: ' + (retry.output_path || ''));
           } else {
-            alert(retry.error || '保存失败');
+            alert(retry.error || '导出失败');
           }
         });
       } else {
-        alert(result.error || '保存失败');
+        alert(result.error || '导出失败');
       }
     } catch (err) {
       hideLoading();

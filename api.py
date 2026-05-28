@@ -125,7 +125,7 @@ class Api:
         dpi = max(72, min(600, int(params.get('dpi', 150))))
         output_dir = params.get('output_dir')
 
-        output_path = get_output_path(files[0], '.pdf', output_dir) if output_dir else None
+        output_path = get_output_path(files[0], '.pdf', output_dir) if output_dir else get_output_path(files[0], '.pdf')
         result, err = ImageEngine.images_to_pdf(
             files, output_path, page_mode, a4_orientation, base_image_index, dpi
         )
@@ -159,15 +159,21 @@ class Api:
         }
 
     def reorder_pages(self, params):
-        """params: {file_path: str, page_order: [int], rotations: {str|int: int}, password: str|null}"""
+        """params: {file_path: str, page_order: [int], rotations: {str|int: int}, password: str|null, output_dir: str|null}"""
         fpath = params.get('file_path')
         page_order = params.get('page_order', [])
         rotations_raw = params.get('rotations', {})
         # Fix: JSON keys are strings, convert to int
         rotations = {int(k): v for k, v in rotations_raw.items()}
         password = params.get('password')
+        output_dir = params.get('output_dir')
 
-        out, needs_pw, err = PdfEngine.reorder_and_save(fpath, page_order, rotations, password=password)
+        if output_dir:
+            output_path = get_output_path(fpath, '_edited.pdf', output_dir)
+        else:
+            output_path = None
+
+        out, needs_pw, err = PdfEngine.reorder_and_save(fpath, page_order, rotations, output_path=output_path, password=password)
         if needs_pw:
             return {'success': False, 'need_password': True, 'error': err}
         if err:
@@ -188,7 +194,7 @@ class Api:
         return {'success': True, 'uniform': uniform, 'sizes': sizes}
 
     def merge_pdfs(self, params):
-        """params: {files: [str], merge_mode: str, a4_orientation: str, password: str|null}"""
+        """params: {files: [str], merge_mode: str, a4_orientation: str, password: str|null, output_dir: str|null}"""
         files = params.get('files', [])
         if not files or len(files) < 2:
             return {'success': False, 'error': '请至少选择2个PDF文件'}
@@ -197,17 +203,16 @@ class Api:
         password = params.get('password')
         output_dir = params.get('output_dir')
 
-        out, needs_pw, err = PdfEngine.merge_pdfs(files, merge_mode, a4_orientation, password=password)
+        if output_dir:
+            output_path = get_output_path(files[0], '_merged.pdf', output_dir)
+        else:
+            output_path = None
+
+        out, needs_pw, err = PdfEngine.merge_pdfs(files, merge_mode, a4_orientation, output_path=output_path, password=password)
         if needs_pw:
             return {'success': False, 'need_password': True, 'error': err}
         if err:
             return {'success': False, 'error': err}
-        # Move to output_dir if specified
-        if output_dir and out:
-            import shutil
-            dest = get_output_path(files[0], '_merged.pdf', output_dir)
-            shutil.move(out, dest)
-            out = dest
         return {'success': True, 'output_path': out}
 
     # --- Split PDF ---

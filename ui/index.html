@@ -263,8 +263,18 @@
 
         <div class="thumbnail-grid" id="thumbnailGrid"></div>
 
+        <div class="settings-group" id="pageManagerSettings" style="display:none;">
+          <div class="setting-item">
+            <label>输出目录</label>
+            <div class="output-dir-row">
+              <input type="text" id="outputDirPageManager" placeholder="与源文件同目录" readonly>
+              <button class="btn btn-secondary btn-sm" onclick="selectOutputDir('outputDirPageManager')">选择</button>
+            </div>
+          </div>
+        </div>
+
         <div class="action-bar" id="pageManagerActions" style="display:none;">
-          <button class="btn btn-primary btn-lg" id="btnSavePageManager">保存修改</button>
+          <button class="btn btn-primary btn-lg" id="btnSavePageManager">导出PDF</button>
         </div>
       </div>
     </section>

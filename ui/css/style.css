@@ -341,8 +341,17 @@ html, body {
 }
 
 .file-item.dragging {
-  opacity: 0.5;
+  opacity: 0.4;
   box-shadow: var(--shadow-md);
+}
+
+/* Drop indicator for file list reorder */
+.drop-indicator {
+  height: 3px;
+  background: var(--primary);
+  border-radius: 2px;
+  margin: 2px 0;
+  animation: fadeIn 0.15s ease;
 }
 
 .file-item .file-icon {
@@ -666,7 +675,15 @@ html, body {
 }
 
 .thumb-card.dragging {
-  opacity: 0.4;
+  opacity: 0.3;
+}
+
+/* Drop indicator for thumbnail grid reorder */
+.thumb-drop-indicator {
+  background: var(--primary);
+  border-radius: var(--radius-sm);
+  opacity: 0.5;
+  animation: fadeIn 0.15s ease;
 }
 
 .thumb-card img {
