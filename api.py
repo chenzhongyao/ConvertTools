@@ -1,3 +1,5 @@
+import os
+import tempfile
 import webview
 from core.pdf_engine import PdfEngine
 from core.image_engine import ImageEngine
@@ -20,7 +22,6 @@ class Api:
     def select_files(self, file_types):
         if not self._window:
             return []
-        # Strip leading dots to avoid patterns like "*..pdf"
         exts = [f"*.{ft.lstrip('.')}" for ft in file_types]
         result = self._window.create_file_dialog(
             webview.OPEN_DIALOG,
@@ -34,6 +35,24 @@ class Api:
             return ''
         result = self._window.create_file_dialog(webview.FOLDER_DIALOG)
         return result[0] if result else ''
+
+    # --- Temp file for drag-and-drop ---
+
+    def save_temp_file(self, filename, data_base64):
+        """Save a base64-encoded file to a temp directory and return the path."""
+        import base64
+        tmp_dir = os.path.join(tempfile.gettempdir(), 'pdf_toolbox_drops')
+        os.makedirs(tmp_dir, exist_ok=True)
+        safe_name = os.path.basename(filename)
+        fpath = os.path.join(tmp_dir, safe_name)
+        # Avoid overwriting
+        if os.path.exists(fpath):
+            name, ext = os.path.splitext(safe_name)
+            fpath = os.path.join(tmp_dir, f"{name}_{os.getpid()}{ext}")
+        raw = base64.b64decode(data_base64)
+        with open(fpath, 'wb') as f:
+            f.write(raw)
+        return fpath
 
     # --- PDF to Word ---
 

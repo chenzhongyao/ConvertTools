@@ -135,7 +135,7 @@
       }
     });
 
-    zone.addEventListener('drop', (e) => {
+    zone.addEventListener('drop', async (e) => {
       e.preventDefault();
       e.stopPropagation();
       zone.classList.remove('drag-over');
@@ -144,16 +144,34 @@
       state.suppressClick = true;
       setTimeout(() => { state.suppressClick = false; }, 300);
 
-      // Try to get file paths from dropped files
       const files = Array.from(e.dataTransfer.files);
-      if (files.length) {
-        const hasPaths = files.some((f) => f.path);
-        if (hasPaths) {
-          // Paths available - add files directly
-          addFiles(viewId, files, false);
+      if (!files.length) return;
+
+      const hasPaths = files.some((f) => f.path);
+      if (hasPaths) {
+        // Paths available (CEF backend) - add files directly
+        addFiles(viewId, files, false);
+        return;
+      }
+
+      // No paths available - read file contents and save via pywebview temp API
+      if (window.pywebview && pywebview.api && pywebview.api.save_temp_file) {
+        const acceptedExts = (fileTypes || '').split(',').map((f) => f.replace(/^\*?\./, '').trim().toLowerCase()).filter(Boolean);
+        const fileObjects = [];
+        for (const file of files) {
+          const ext = file.name.split('.').pop().toLowerCase();
+          if (acceptedExts.length && !acceptedExts.includes(ext)) continue;
+          try {
+            const base64 = await readFileAsBase64(file);
+            const tmpPath = await pywebview.api.save_temp_file(file.name, base64);
+            fileObjects.push({ name: file.name, path: tmpPath, size: file.size });
+          } catch (err) {
+            console.warn('Failed to save dropped file:', file.name, err);
+          }
         }
-        // If paths not available, silently ignore.
-        // User should click to select files via pywebview dialog instead.
+        if (fileObjects.length) {
+          addFiles(viewId, fileObjects, true);
+        }
       }
     });
 
@@ -163,6 +181,19 @@
       e.preventDefault();
       e.stopPropagation();
       openPywebviewFileDialog(viewId, fileTypes);
+    });
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        const base64 = dataUrl.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
     });
   }
 
@@ -308,76 +339,75 @@
   }
 
   // ---- Drag Reorder for File Lists (mouse events) ----
-  function setupFileListReorder(listEl, viewId) {
-    let dragIdx = null;
-    let dragItem = null;
-    let startY = 0;
-    let isDragging = false;
+  let fileListDragState = null; // shared singleton to avoid duplicate listeners
 
+  function setupFileListReorder(listEl, viewId) {
     listEl.querySelectorAll('.file-item').forEach((item) => {
       const handle = item.querySelector('.drag-handle');
       if (!handle) return;
 
       handle.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        dragIdx = parseInt(item.dataset.index, 10);
-        dragItem = item;
-        startY = e.clientY;
-        isDragging = false;
+        fileListDragState = {
+          listEl: listEl,
+          viewId: viewId,
+          dragIdx: parseInt(item.dataset.index, 10),
+          dragItem: item,
+          startY: e.clientY,
+          isDragging: false,
+        };
       });
     });
-
-    document.addEventListener('mousemove', (e) => {
-      if (dragItem === null) return;
-      const dy = e.clientY - startY;
-      if (!isDragging && Math.abs(dy) > 5) {
-        isDragging = true;
-        dragItem.classList.add('dragging');
-      }
-      if (!isDragging) return;
-      e.preventDefault();
-
-      // Find which item the cursor is over
-      const items = [...listEl.querySelectorAll('.file-item:not(.dragging)')];
-      let targetItem = null;
-      for (const it of items) {
-        const rect = it.getBoundingClientRect();
-        if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
-          targetItem = it;
-          break;
-        }
-      }
-      // Visually reorder: insert dragged item before/after target
-      if (targetItem) {
-        const targetRect = targetItem.getBoundingClientRect();
-        const midY = targetRect.top + targetRect.height / 2;
-        if (e.clientY < midY) {
-          listEl.insertBefore(dragItem, targetItem);
-        } else {
-          listEl.insertBefore(dragItem, targetItem.nextSibling);
-        }
-      }
-    });
-
-    document.addEventListener('mouseup', () => {
-      if (dragItem === null) return;
-      if (isDragging) {
-        dragItem.classList.remove('dragging');
-        // Read new order from DOM
-        const newOrder = [...listEl.querySelectorAll('.file-item')].map(
-          (el) => parseInt(el.dataset.index, 10)
-        );
-        // Reorder state.files based on new DOM order
-        const arr = state.files[viewId];
-        const reordered = newOrder.map((idx) => arr[idx]);
-        state.files[viewId] = reordered;
-        renderFileList(viewId);
-      }
-      dragItem = null;
-      dragIdx = null;
-      isDragging = false;
-    });
   }
+
+  // Single pair of document-level listeners for file list drag
+  document.addEventListener('mousemove', (e) => {
+    if (!fileListDragState) return;
+    const ds = fileListDragState;
+    const dy = e.clientY - ds.startY;
+    if (!ds.isDragging && Math.abs(dy) > 5) {
+      ds.isDragging = true;
+      ds.dragItem.classList.add('dragging');
+    }
+    if (!ds.isDragging) return;
+    e.preventDefault();
+
+    const items = [...ds.listEl.querySelectorAll('.file-item:not(.dragging)')];
+    let targetItem = null;
+    for (const it of items) {
+      const rect = it.getBoundingClientRect();
+      if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        targetItem = it;
+        break;
+      }
+    }
+    if (targetItem) {
+      const targetRect = targetItem.getBoundingClientRect();
+      const midY = targetRect.top + targetRect.height / 2;
+      if (e.clientY < midY) {
+        ds.listEl.insertBefore(ds.dragItem, targetItem);
+      } else {
+        ds.listEl.insertBefore(ds.dragItem, targetItem.nextSibling);
+      }
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!fileListDragState) return;
+    const ds = fileListDragState;
+
+    if (ds.isDragging) {
+      ds.dragItem.classList.remove('dragging');
+      const newOrder = [...ds.listEl.querySelectorAll('.file-item')].map(
+        (el) => parseInt(el.dataset.index, 10)
+      );
+      const arr = state.files[ds.viewId];
+      const reordered = newOrder.map((idx) => arr[idx]);
+      state.files[ds.viewId] = reordered;
+      renderFileList(ds.viewId);
+    }
+
+    fileListDragState = null;
+  });
 
   // ---- Setup Drop Zones ----
   setupDropZone('dropPdfToWord', 'viewPdfToWord', '.pdf');
@@ -548,85 +578,82 @@
   }
 
   // ---- Thumbnail Drag Reorder (mouse events, not HTML5 DnD) ----
+  let thumbDragState = null; // shared singleton to avoid duplicate listeners
+
   function setupThumbnailDragReorder() {
     const grid = $('#thumbnailGrid');
-    let dragCard = null;
-    let dragDisplayIdx = null;
-    let startY = 0;
-    let startX = 0;
-    let isDragging = false;
 
     grid.querySelectorAll('.thumb-card').forEach((card) => {
       card.addEventListener('mousedown', (e) => {
         // Don't start drag on action buttons
         if (e.target.closest('.thumb-actions')) return;
-        e.preventDefault();
 
-        dragCard = card;
-        dragDisplayIdx = parseInt(card.dataset.displayIndex, 10);
-        startX = e.clientX;
-        startY = e.clientY;
-        isDragging = false;
+        thumbDragState = {
+          dragCard: card,
+          dragDisplayIdx: parseInt(card.dataset.displayIndex, 10),
+          startX: e.clientX,
+          startY: e.clientY,
+          isDragging: false,
+        };
       });
     });
-
-    document.addEventListener('mousemove', (e) => {
-      if (dragCard === null) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-
-      if (!isDragging && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
-        isDragging = true;
-        dragCard.classList.add('dragging');
-      }
-
-      if (!isDragging) return;
-      e.preventDefault();
-
-      // Find which card the cursor is over
-      const cards = [...grid.querySelectorAll('.thumb-card:not(.dragging)')];
-      let targetCard = null;
-      for (const c of cards) {
-        const rect = c.getBoundingClientRect();
-        if (e.clientX >= rect.left && e.clientX <= rect.right &&
-            e.clientY >= rect.top && e.clientY <= rect.bottom) {
-          targetCard = c;
-          break;
-        }
-      }
-
-      // Visually move dragged card in the grid
-      if (targetCard) {
-        const targetRect = targetCard.getBoundingClientRect();
-        const midX = targetRect.left + targetRect.width / 2;
-        if (e.clientX < midX) {
-          grid.insertBefore(dragCard, targetCard);
-        } else {
-          grid.insertBefore(dragCard, targetCard.nextSibling);
-        }
-      }
-    });
-
-    document.addEventListener('mouseup', () => {
-      if (dragCard === null) return;
-
-      if (isDragging) {
-        dragCard.classList.remove('dragging');
-
-        // Read new order from DOM positions
-        const newDisplayOrder = [...grid.querySelectorAll('.thumb-card')].map(
-          (c) => parseInt(c.dataset.pageIndex, 10)
-        );
-        // Rebuild pageOrder from the new display order
-        state.pageOrder = newDisplayOrder;
-        renderThumbnails(getCurrentThumbnails());
-      }
-
-      dragCard = null;
-      dragDisplayIdx = null;
-      isDragging = false;
-    });
   }
+
+  // Single pair of document-level listeners for thumbnail drag
+  document.addEventListener('mousemove', (e) => {
+    if (!thumbDragState) return;
+    const ds = thumbDragState;
+    const dx = e.clientX - ds.startX;
+    const dy = e.clientY - ds.startY;
+
+    if (!ds.isDragging && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+      ds.isDragging = true;
+      ds.dragCard.classList.add('dragging');
+    }
+
+    if (!ds.isDragging) return;
+    e.preventDefault();
+
+    const grid = $('#thumbnailGrid');
+    const cards = [...grid.querySelectorAll('.thumb-card:not(.dragging)')];
+    let targetCard = null;
+    for (const c of cards) {
+      const rect = c.getBoundingClientRect();
+      if (e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        targetCard = c;
+        break;
+      }
+    }
+
+    if (targetCard) {
+      const targetRect = targetCard.getBoundingClientRect();
+      const midX = targetRect.left + targetRect.width / 2;
+      if (e.clientX < midX) {
+        grid.insertBefore(ds.dragCard, targetCard);
+      } else {
+        grid.insertBefore(ds.dragCard, targetCard.nextSibling);
+      }
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!thumbDragState) return;
+    const ds = thumbDragState;
+
+    if (ds.isDragging) {
+      ds.dragCard.classList.remove('dragging');
+
+      const grid = $('#thumbnailGrid');
+      const newDisplayOrder = [...grid.querySelectorAll('.thumb-card')].map(
+        (c) => parseInt(c.dataset.pageIndex, 10)
+      );
+      state.pageOrder = newDisplayOrder;
+      renderThumbnails(getCurrentThumbnails());
+    }
+
+    thumbDragState = null;
+  });
 
   let cachedThumbnails = [];
 
