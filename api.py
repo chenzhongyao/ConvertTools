@@ -39,8 +39,9 @@ class Api:
 
     # --- Temp file for drag-and-drop ---
 
-    def save_temp_file(self, filename, data_base64):
-        """Save a base64-encoded file to a temp directory and return the path."""
+    def save_temp_file(self, filename, data_base64, source_dir=None):
+        """Save a base64-encoded file to a temp directory and return the path.
+        source_dir: the original directory of the file (from drag-and-drop), stored as metadata."""
         import base64
         tmp_dir = os.path.join(tempfile.gettempdir(), 'pdf_toolbox_drops')
         os.makedirs(tmp_dir, exist_ok=True)
@@ -53,7 +54,7 @@ class Api:
         raw = base64.b64decode(data_base64)
         with open(fpath, 'wb') as f:
             f.write(raw)
-        return fpath
+        return {'path': fpath, 'source_dir': source_dir or ''}
 
     # --- PDF to Word ---
 

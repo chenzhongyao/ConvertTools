@@ -58,6 +58,17 @@
     }
   };
 
+  // Helper: resolve output dir from user input or source file directories
+  function resolveOutputDir(inputId, files) {
+    const userDir = getOutputDir(inputId);
+    if (userDir) return userDir;
+    // When no user-selected dir, find the first source_dir from file objects
+    for (const f of files) {
+      if (f.source_dir) return f.source_dir;
+    }
+    return null;
+  }
+
   // Helper: read output dir value, return null if empty
   function getOutputDir(inputId) {
     const input = document.getElementById(inputId);
@@ -163,8 +174,11 @@
           if (acceptedExts.length && !acceptedExts.includes(ext)) continue;
           try {
             const base64 = await readFileAsBase64(file);
-            const tmpPath = await pywebview.api.save_temp_file(file.name, base64);
-            fileObjects.push({ name: file.name, path: tmpPath, size: file.size });
+            const result = await pywebview.api.save_temp_file(file.name, base64);
+            // result is {path, source_dir} — source_dir may be empty if undetectable
+            const tmpPath = (typeof result === 'string') ? result : result.path;
+            const sourceDir = (typeof result === 'string') ? '' : (result.source_dir || '');
+            fileObjects.push({ name: file.name, path: tmpPath, source_dir: sourceDir, size: file.size });
           } catch (err) {
             console.warn('Failed to save dropped file:', file.name, err);
           }
@@ -222,8 +236,8 @@
     }
 
     const items = isPathObjects
-      ? files.map((f) => ({ name: f.name, path: f.path, size: f.size || 0 }))
-      : files.map((f) => ({ name: f.name, path: f.path || '', size: f.size }));
+      ? files.map((f) => ({ name: f.name, path: f.path, source_dir: f.source_dir || '', size: f.size || 0 }))
+      : files.map((f) => ({ name: f.name, path: f.path || '', source_dir: f.source_dir || '', size: f.size }));
 
     // Filter out files without paths (can't process them)
     const validItems = items.filter((f) => f.path);
@@ -852,7 +866,7 @@
     showLoading('正在转换PDF为Word...');
     setProgress('progressPdfToWord', 0, '准备中...');
 
-    const outputDir = getOutputDir('outputDirPdfToWord');
+    const outputDir = resolveOutputDir('outputDirPdfToWord', files);
 
     try {
       const paths = files.map((f) => f.path);
@@ -896,7 +910,7 @@
 
     const format = $('#imgFormat').value;
     const dpi = parseInt($('#imgDpi').value, 10) || 200;
-    const outputDir = getOutputDir('outputDirPdfToImage');
+    const outputDir = resolveOutputDir('outputDirPdfToImage', files);
 
     showLoading('正在转换PDF为图片...');
     setProgress('progressPdfToImage', 0, '准备中...');
@@ -945,7 +959,7 @@
     const a4Orientation = $('#a4Orientation').value;
     const baseImageIndex = parseInt($('#baseImageIndex').value, 10) || 1;
     const dpi = parseInt($('#img2pdfDpi').value, 10) || 200;
-    const outputDir = getOutputDir('outputDirImageToPdf');
+    const outputDir = resolveOutputDir('outputDirImageToPdf', files);
 
     showLoading('正在生成PDF...');
 
@@ -980,7 +994,7 @@
 
     showLoading('正在导出PDF...');
 
-    const outputDir = getOutputDir('outputDirPageManager');
+    const outputDir = resolveOutputDir('outputDirPageManager', state.files.viewPageManager || []);
 
     try {
       const params = {
@@ -1036,7 +1050,7 @@
 
     const mergeMode = $('#mergeMode').value;
     const mergeA4Orientation = $('#mergeA4Orientation').value;
-    const outputDir = getOutputDir('outputDirMergePdf');
+    const outputDir = resolveOutputDir('outputDirMergePdf', files);
 
     showLoading('正在合并PDF...');
     setProgress('progressMergePdf', 0, '准备中...');
@@ -1103,7 +1117,7 @@
     if (!files.length) return;
 
     const rangesStr = $('#splitRanges').value.trim();
-    const outputDir = getOutputDir('outputDirSplitPdf');
+    const outputDir = resolveOutputDir('outputDirSplitPdf', files);
 
     if (!rangesStr) {
       alert('请输入拆分范围');
