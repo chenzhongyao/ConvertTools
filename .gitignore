@@ -1,0 +1,6 @@
+.claude/
+__pycache__/
+build/
+dist/
+core/__pycache__/
+utils/__pycache__/
