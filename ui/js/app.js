@@ -13,13 +13,14 @@
       viewPdfToImage: [],
       viewImageToPdf: [],
       viewMergePdf: [],
+      viewSplitPdf: [],
     },
     pageOrder: [],       // array of page indices for Page Manager
     pageRotations: {},   // { pageIndex: degrees }
     pdfPath: null,       // current PDF in Page Manager
     pdfPassword: null,   // password for encrypted PDF in Page Manager
     passwordCallback: null,
-    isInternalDrag: false,  // flag to distinguish internal reorder from external file drop
+    suppressClick: false,   // prevent click handler after drag
   };
 
   const viewTitles = {
@@ -110,20 +111,18 @@
   }
 
   // ---- File Handling ----
+  // In PyWebView, drag-and-drop from OS may not expose file .path.
+  // We rely primarily on click-to-select (pywebview file dialog) for reliable operation.
+  // Drag-and-drop is supported when the runtime exposes .path (e.g. CEF backend).
+
   function setupDropZone(zoneId, viewId, fileTypes, multiple) {
     const zone = document.getElementById(zoneId);
     if (!zone) return;
-    const input = zone.querySelector('input[type="file"]');
 
-    if (input) {
-      input.multiple = multiple !== false;
-      input.accept = fileTypes || '*';
-    }
-
-    // dragover: only respond if it's an external file drag (not internal reorder)
+    // dragover: allow drop visual feedback
     zone.addEventListener('dragover', (e) => {
-      if (state.isInternalDrag) return;  // ignore internal reorder drags
-      if (e.dataTransfer.types.includes('Files')) {
+      // Only allow if this looks like an external file drag
+      if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
         zone.classList.add('drag-over');
@@ -138,64 +137,47 @@
 
     zone.addEventListener('drop', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       zone.classList.remove('drag-over');
 
-      // Skip internal reorder drags entirely
-      if (state.isInternalDrag) return;
+      // Prevent click from firing after drop
+      state.suppressClick = true;
+      setTimeout(() => { state.suppressClick = false; }, 300);
 
+      // Try to get file paths from dropped files
       const files = Array.from(e.dataTransfer.files);
       if (files.length) {
-        // In PyWebView, dropped files expose .path property
         const hasPaths = files.some((f) => f.path);
         if (hasPaths) {
+          // Paths available - add files directly
           addFiles(viewId, files, false);
-        } else {
-          // Browser doesn't expose file paths - fall back to pywebview dialog
-          openPywebviewFileDialog(zoneId, viewId, fileTypes);
         }
+        // If paths not available, silently ignore.
+        // User should click to select files via pywebview dialog instead.
       }
     });
 
     // Click to open file dialog
     zone.addEventListener('click', (e) => {
-      // Don't re-trigger if clicking on the hidden input itself
-      if (e.target === input) return;
-
+      if (state.suppressClick) return;
       e.preventDefault();
       e.stopPropagation();
-
-      if (window.pywebview && pywebview.api) {
-        openPywebviewFileDialog(zoneId, viewId, fileTypes);
-      } else if (input) {
-        input.click();
-      }
+      openPywebviewFileDialog(viewId, fileTypes);
     });
-
-    // Prevent the hidden file input from bubbling click back to zone
-    if (input) {
-      input.addEventListener('click', (e) => {
-        e.stopPropagation();
-      });
-
-      input.addEventListener('change', () => {
-        const files = Array.from(input.files);
-        if (files.length) addFiles(viewId, files, false);
-        input.value = '';
-      });
-    }
   }
 
-  async function openPywebviewFileDialog(zoneId, viewId, fileTypes) {
-    if (!window.pywebview || !pywebview.api) return;
-    try {
-      const exts = (fileTypes || '').split(',').map((f) => f.replace(/^\*?\./, '').trim()).filter(Boolean);
-      const paths = await pywebview.api.select_files(exts.length ? exts : ['pdf']);
-      if (paths && paths.length) {
-        const fileObjects = paths.map((p) => ({ name: p.split(/[\\/]/).pop(), path: p, size: 0 }));
-        addFiles(viewId, fileObjects, true);
+  async function openPywebviewFileDialog(viewId, fileTypes) {
+    if (window.pywebview && pywebview.api) {
+      try {
+        const exts = (fileTypes || '').split(',').map((f) => f.replace(/^\*?\./, '').trim()).filter(Boolean);
+        const paths = await pywebview.api.select_files(exts.length ? exts : ['pdf']);
+        if (paths && paths.length) {
+          const fileObjects = paths.map((p) => ({ name: p.split(/[\\/]/).pop(), path: p, size: 0 }));
+          addFiles(viewId, fileObjects, true);
+        }
+      } catch (err) {
+        console.warn('pywebview file dialog failed:', err);
       }
-    } catch (err) {
-      console.warn('pywebview file dialog failed:', err);
     }
   }
 
@@ -273,7 +255,7 @@
     listEl.innerHTML = files
       .map(
         (f, i) => `
-      <div class="file-item ${isSortable ? 'sortable-item' : ''}" data-index="${i}" draggable="${isSortable}">
+      <div class="file-item ${isSortable ? 'sortable-item' : ''}" data-index="${i}">
         ${isSortable ? `
           <span class="drag-handle" title="拖拽排序">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="2"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="9" cy="18" r="2"/><circle cx="15" cy="18" r="2"/></svg>
@@ -301,8 +283,8 @@
       });
     });
 
-    // Setup drag reorder if sortable
-    if (isSortable) setupDragReorder(listEl, viewId);
+    // Setup drag reorder if sortable (using mouse events for reliability)
+    if (isSortable) setupFileListReorder(listEl, viewId);
   }
 
   function updateButtonStates(viewId) {
@@ -325,47 +307,75 @@
     }
   }
 
-  // ---- Drag Reorder for File Lists ----
-  function setupDragReorder(listEl, viewId) {
+  // ---- Drag Reorder for File Lists (mouse events) ----
+  function setupFileListReorder(listEl, viewId) {
     let dragIdx = null;
+    let dragItem = null;
+    let startY = 0;
+    let isDragging = false;
 
-    const items = listEl.querySelectorAll('.file-item');
+    listEl.querySelectorAll('.file-item').forEach((item) => {
+      const handle = item.querySelector('.drag-handle');
+      if (!handle) return;
 
-    items.forEach((item) => {
-      item.addEventListener('dragstart', (e) => {
+      handle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
         dragIdx = parseInt(item.dataset.index, 10);
-        item.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', 'reorder');
-        state.isInternalDrag = true;  // mark as internal drag
+        dragItem = item;
+        startY = e.clientY;
+        isDragging = false;
       });
+    });
 
-      item.addEventListener('dragend', () => {
-        item.classList.remove('dragging');
-        dragIdx = null;
-        // Reset internal drag flag after a short delay (allows drop events to finish)
-        setTimeout(() => { state.isInternalDrag = false; }, 50);
-      });
+    document.addEventListener('mousemove', (e) => {
+      if (dragItem === null) return;
+      const dy = e.clientY - startY;
+      if (!isDragging && Math.abs(dy) > 5) {
+        isDragging = true;
+        dragItem.classList.add('dragging');
+      }
+      if (!isDragging) return;
+      e.preventDefault();
 
-      item.addEventListener('dragover', (e) => {
-        if (!state.isInternalDrag) return;  // only handle internal drags
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'move';
-      });
-
-      item.addEventListener('drop', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const dropIdx = parseInt(item.dataset.index, 10);
-        if (dragIdx !== null && dragIdx !== dropIdx) {
-          const arr = state.files[viewId];
-          const [moved] = arr.splice(dragIdx, 1);
-          arr.splice(dropIdx, 0, moved);
-          renderFileList(viewId);
+      // Find which item the cursor is over
+      const items = [...listEl.querySelectorAll('.file-item:not(.dragging)')];
+      let targetItem = null;
+      for (const it of items) {
+        const rect = it.getBoundingClientRect();
+        if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          targetItem = it;
+          break;
         }
-        state.isInternalDrag = false;
-      });
+      }
+      // Visually reorder: insert dragged item before/after target
+      if (targetItem) {
+        const targetRect = targetItem.getBoundingClientRect();
+        const midY = targetRect.top + targetRect.height / 2;
+        if (e.clientY < midY) {
+          listEl.insertBefore(dragItem, targetItem);
+        } else {
+          listEl.insertBefore(dragItem, targetItem.nextSibling);
+        }
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (dragItem === null) return;
+      if (isDragging) {
+        dragItem.classList.remove('dragging');
+        // Read new order from DOM
+        const newOrder = [...listEl.querySelectorAll('.file-item')].map(
+          (el) => parseInt(el.dataset.index, 10)
+        );
+        // Reorder state.files based on new DOM order
+        const arr = state.files[viewId];
+        const reordered = newOrder.map((idx) => arr[idx]);
+        state.files[viewId] = reordered;
+        renderFileList(viewId);
+      }
+      dragItem = null;
+      dragIdx = null;
+      isDragging = false;
     });
   }
 
@@ -421,7 +431,6 @@
     settingsEl.style.display = 'block';
     infoEl.innerHTML = `<strong>${files.length}</strong> 个文件待合并`;
 
-    // Try to get page sizes from backend
     if (window.pywebview && pywebview.api) {
       try {
         const paths = files.map((f) => f.path);
@@ -461,7 +470,7 @@
             state.pdfPassword = password;
             const unlockResult = await pywebview.api.unlock_pdf({ file_path: pdfPath, password: password });
             if (unlockResult && unlockResult.success) {
-              loadThumbnails(); // Now uses state.pdfPassword
+              loadThumbnails();
             } else {
               alert('密码错误，请重试');
             }
@@ -474,7 +483,7 @@
         grid.innerHTML = '<div class="empty-state">加载缩略图失败</div>';
       }
     } else {
-      // Demo mode: show placeholder thumbnails
+      // Demo mode
       state.pageOrder = [0, 1, 2, 3];
       state.pageRotations = {};
       renderThumbnails([]);
@@ -498,7 +507,7 @@
           ? `<img src="${src}" style="transform:rotate(${rotation}deg)" alt="Page ${pageIdx + 1}">`
           : `<div class="empty-state" style="aspect-ratio:3/4;display:flex;align-items:center;justify-content:center;">${pageIdx + 1}</div>`;
         return `
-        <div class="thumb-card" data-page-index="${pageIdx}" data-display-index="${displayIdx}" draggable="true">
+        <div class="thumb-card" data-page-index="${pageIdx}" data-display-index="${displayIdx}">
           ${imgTag}
           <div class="thumb-label">第 ${displayIdx + 1} 页</div>
           <div class="thumb-actions">
@@ -534,49 +543,88 @@
       });
     });
 
-    // Drag reorder thumbnails
+    // Setup thumbnail drag reorder using mouse events
     setupThumbnailDragReorder();
   }
 
+  // ---- Thumbnail Drag Reorder (mouse events, not HTML5 DnD) ----
   function setupThumbnailDragReorder() {
     const grid = $('#thumbnailGrid');
+    let dragCard = null;
     let dragDisplayIdx = null;
+    let startY = 0;
+    let startX = 0;
+    let isDragging = false;
 
-    const cards = grid.querySelectorAll('.thumb-card');
+    grid.querySelectorAll('.thumb-card').forEach((card) => {
+      card.addEventListener('mousedown', (e) => {
+        // Don't start drag on action buttons
+        if (e.target.closest('.thumb-actions')) return;
+        e.preventDefault();
 
-    cards.forEach((card) => {
-      card.addEventListener('dragstart', (e) => {
+        dragCard = card;
         dragDisplayIdx = parseInt(card.dataset.displayIndex, 10);
-        card.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', 'thumb-reorder');
-        state.isInternalDrag = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        isDragging = false;
       });
+    });
 
-      card.addEventListener('dragend', () => {
-        card.classList.remove('dragging');
-        dragDisplayIdx = null;
-        setTimeout(() => { state.isInternalDrag = false; }, 50);
-      });
+    document.addEventListener('mousemove', (e) => {
+      if (dragCard === null) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
 
-      card.addEventListener('dragover', (e) => {
-        if (!state.isInternalDrag) return;
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'move';
-      });
+      if (!isDragging && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+        isDragging = true;
+        dragCard.classList.add('dragging');
+      }
 
-      card.addEventListener('drop', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const dropDisplayIdx = parseInt(card.dataset.displayIndex, 10);
-        if (dragDisplayIdx !== null && dragDisplayIdx !== dropDisplayIdx) {
-          const [moved] = state.pageOrder.splice(dragDisplayIdx, 1);
-          state.pageOrder.splice(dropDisplayIdx, 0, moved);
-          renderThumbnails(getCurrentThumbnails());
+      if (!isDragging) return;
+      e.preventDefault();
+
+      // Find which card the cursor is over
+      const cards = [...grid.querySelectorAll('.thumb-card:not(.dragging)')];
+      let targetCard = null;
+      for (const c of cards) {
+        const rect = c.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right &&
+            e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          targetCard = c;
+          break;
         }
-        state.isInternalDrag = false;
-      });
+      }
+
+      // Visually move dragged card in the grid
+      if (targetCard) {
+        const targetRect = targetCard.getBoundingClientRect();
+        const midX = targetRect.left + targetRect.width / 2;
+        if (e.clientX < midX) {
+          grid.insertBefore(dragCard, targetCard);
+        } else {
+          grid.insertBefore(dragCard, targetCard.nextSibling);
+        }
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (dragCard === null) return;
+
+      if (isDragging) {
+        dragCard.classList.remove('dragging');
+
+        // Read new order from DOM positions
+        const newDisplayOrder = [...grid.querySelectorAll('.thumb-card')].map(
+          (c) => parseInt(c.dataset.pageIndex, 10)
+        );
+        // Rebuild pageOrder from the new display order
+        state.pageOrder = newDisplayOrder;
+        renderThumbnails(getCurrentThumbnails());
+      }
+
+      dragCard = null;
+      dragDisplayIdx = null;
+      isDragging = false;
     });
   }
 
@@ -608,7 +656,6 @@
       return;
     }
 
-    // Convert 1-based to 0-based and filter
     const toDelete = new Set(indices.map((n) => n - 1));
     state.pageOrder = state.pageOrder.filter((idx) => !toDelete.has(idx));
     $('#deleteRange').value = '';
@@ -623,7 +670,6 @@
       alert('请输入有效的页码范围（1~' + state.pageOrder.length + '）');
       return;
     }
-    // from/to are 1-based display positions
     const fromIdx = from - 1;
     const toIdx = to - 1;
     const [moved] = state.pageOrder.splice(fromIdx, 1);
