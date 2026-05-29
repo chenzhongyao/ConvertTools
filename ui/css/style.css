@@ -846,6 +846,121 @@ html, body {
   gap: 10px;
 }
 
+/* --- Settings Modal --- */
+.settings-modal-card {
+  width: 440px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-modal-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+
+.settings-modal-header h3 {
+  flex: 1;
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.settings-section {
+  padding: 20px 24px;
+}
+
+.settings-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.settings-section-title svg {
+  color: var(--primary);
+}
+
+.settings-section-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+
+.settings-dir-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-dir-row input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font);
+  outline: none;
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
+}
+
+.settings-dir-row input:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+.settings-status {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  animation: fadeIn 0.3s ease;
+}
+
+.settings-status.success {
+  background: rgba(39, 174, 96, 0.1);
+  color: var(--success);
+}
+
+.settings-status.error {
+  background: rgba(231, 76, 60, 0.1);
+  color: var(--danger);
+}
+
+.settings-modal-footer {
+  padding: 14px 24px;
+  border-top: 1px solid var(--border);
+  text-align: right;
+}
+
+.settings-version {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 /* --- Loading Overlay --- */
 .loading-overlay {
   position: fixed;

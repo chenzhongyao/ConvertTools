@@ -1,4 +1,5 @@
 import os
+import json
 import tempfile
 import webview
 from core.pdf_engine import PdfEngine
@@ -6,6 +7,21 @@ from core.image_engine import ImageEngine
 from core.word_engine import WordEngine
 from core.ocr_engine import OcrEngine
 from utils.file_utils import get_output_path
+
+CONFIG_PATH = os.path.join(os.path.expanduser('~'), '.pdf_toolbox_config.json')
+
+
+def _load_config():
+    try:
+        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_config(cfg):
+    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
 
 
 class Api:
@@ -16,6 +32,27 @@ class Api:
 
     def set_window(self, window):
         self._window = window
+
+    # --- Config ---
+
+    def get_config(self):
+        cfg = _load_config()
+        output_dir = cfg.get('default_output_dir', '')
+        if output_dir and not os.path.isdir(output_dir):
+            output_dir = ''
+        return {'default_output_dir': output_dir}
+
+    def set_default_output_dir(self, path):
+        cfg = _load_config()
+        cfg['default_output_dir'] = path or ''
+        _save_config(cfg)
+        return {'success': True}
+
+    def clear_default_output_dir(self):
+        cfg = _load_config()
+        cfg['default_output_dir'] = ''
+        _save_config(cfg)
+        return {'success': True}
 
     # --- File dialogs ---
 

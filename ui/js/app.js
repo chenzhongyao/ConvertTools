@@ -21,6 +21,7 @@
     pdfPassword: null,   // password for encrypted PDF in Page Manager
     passwordCallback: null,
     suppressClick: false,   // prevent click handler after drag
+    defaultOutputDir: '',   // persisted default output directory
   };
 
   const viewTitles = {
@@ -42,6 +43,115 @@
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  // ---- Default Output Directory ----
+  const outputDirInputIds = [
+    'outputDirPdfToWord',
+    'outputDirPdfToImage',
+    'outputDirImageToPdf',
+    'outputDirPageManager',
+    'outputDirSplitPdf',
+    'outputDirMergePdf',
+  ];
+
+  async function loadDefaultOutputDir() {
+    if (window.pywebview && pywebview.api) {
+      try {
+        const result = await pywebview.api.get_config();
+        if (result && result.default_output_dir) {
+          state.defaultOutputDir = result.default_output_dir;
+        }
+      } catch (err) {
+        // ignore
+      }
+    }
+    fillOutputDirFields();
+  }
+
+  function fillOutputDirFields() {
+    for (const id of outputDirInputIds) {
+      const input = document.getElementById(id);
+      if (input && state.defaultOutputDir) {
+        input.value = state.defaultOutputDir;
+        input.placeholder = state.defaultOutputDir;
+      }
+    }
+  }
+
+  function clearOutputDirFields() {
+    for (const id of outputDirInputIds) {
+      const input = document.getElementById(id);
+      if (input) {
+        input.value = '';
+        input.placeholder = '与源文件同目录';
+      }
+    }
+  }
+
+  // ---- Settings Modal ----
+  function openSettingsModal() {
+    const input = $('#defaultOutputDirInput');
+    input.value = state.defaultOutputDir || '';
+    $('#defaultDirStatus').style.display = 'none';
+    $('#settingsModal').style.display = 'flex';
+  }
+
+  function closeSettingsModal() {
+    $('#settingsModal').style.display = 'none';
+  }
+
+  $('#settingsBtn').addEventListener('click', openSettingsModal);
+  $('#settingsModalClose').addEventListener('click', closeSettingsModal);
+
+  // Click overlay to close
+  $('#settingsModal').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeSettingsModal();
+  });
+
+  // Select default dir
+  $('#btnSelectDefaultDir').addEventListener('click', async () => {
+    if (window.pywebview && pywebview.api) {
+      try {
+        const folder = await pywebview.api.select_folder();
+        if (folder) {
+          $('#defaultOutputDirInput').value = folder;
+          const result = await pywebview.api.set_default_output_dir(folder);
+          if (result && result.success) {
+            state.defaultOutputDir = folder;
+            fillOutputDirFields();
+            showSettingsStatus('默认输出目录已设置', 'success');
+          }
+        }
+      } catch (err) {
+        showSettingsStatus('设置失败: ' + err.message, 'error');
+      }
+    }
+  });
+
+  // Clear default dir
+  $('#btnClearDefaultDir').addEventListener('click', async () => {
+    if (window.pywebview && pywebview.api) {
+      try {
+        const result = await pywebview.api.clear_default_output_dir();
+        if (result && result.success) {
+          state.defaultOutputDir = '';
+          $('#defaultOutputDirInput').value = '';
+          clearOutputDirFields();
+          showSettingsStatus('已清除默认输出目录', 'success');
+        }
+      } catch (err) {
+        showSettingsStatus('清除失败: ' + err.message, 'error');
+      }
+    }
+  });
+
+  function showSettingsStatus(text, type) {
+    const el = $('#defaultDirStatus');
+    el.textContent = text;
+    el.className = 'settings-status ' + type;
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 2500);
   }
 
   // ---- Output Directory Selection ----
@@ -1171,4 +1281,13 @@
     showPasswordModal,
     state,
   };
+
+  // ---- Init: load default output dir ----
+  if (window.pywebview) {
+    // pywebview ready event
+    window.addEventListener('pywebviewready', loadDefaultOutputDir);
+  } else {
+    // Fallback for dev / demo
+    loadDefaultOutputDir();
+  }
 })();
