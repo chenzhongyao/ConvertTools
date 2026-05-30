@@ -1071,3 +1071,317 @@ html, body {
 .mt-12 { margin-top: 12px; }
 .mt-16 { margin-top: 16px; }
 .mt-24 { margin-top: 24px; }
+
+/* --- Direction Tabs (HTML/Markdown Converter) --- */
+.direction-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 20px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  transition: background var(--transition);
+}
+
+.direction-tab {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), box-shadow var(--transition);
+}
+
+.direction-tab.active {
+  background: var(--surface);
+  color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.direction-tab:hover:not(.active) {
+  color: var(--text);
+}
+
+/* --- HTML/Markdown Panels --- */
+.hm-panels {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.hm-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hm-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.hm-textarea {
+  flex: 1;
+  min-height: 300px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--transition), background var(--transition), color var(--transition), box-shadow var(--transition);
+}
+
+.hm-textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+.hm-textarea[readonly] {
+  background: var(--bg-secondary);
+}
+
+.hm-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  padding-top: 24px;
+}
+
+/* --- File Diff Drop Row --- */
+.diff-drop-row {
+  display: flex;
+  gap: 16px;
+}
+
+.diff-drop-zone {
+  flex: 1;
+  padding: 32px 16px;
+}
+
+.diff-drop-zone svg {
+  width: 36px;
+  height: 36px;
+}
+
+/* --- Diff File Info --- */
+.diff-file-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.diff-file-name {
+  font-weight: 600;
+  color: var(--text);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-vs {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* --- Diff Result --- */
+.diff-result {
+  margin-top: 20px;
+}
+
+.diff-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.diff-summary {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.diff-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* --- Diff Container (Side-by-Side) --- */
+.diff-container {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface);
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.diff-pane {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.diff-pane-header {
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.diff-pane-content {
+  overflow-y: auto;
+  max-height: 500px;
+  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.diff-divider {
+  width: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+  transition: background var(--transition);
+}
+
+/* --- Diff Line Styles --- */
+.diff-line {
+  display: flex;
+  min-height: 22px;
+  padding: 0 8px 0 0;
+  border-left: 3px solid transparent;
+}
+
+.diff-line-num {
+  width: 44px;
+  min-width: 44px;
+  text-align: right;
+  padding-right: 8px;
+  color: var(--text-muted);
+  user-select: none;
+  font-size: 11px;
+  line-height: 22px;
+}
+
+.diff-line-text {
+  flex: 1;
+  white-space: pre-wrap;
+  word-break: break-all;
+  padding-left: 4px;
+  line-height: 22px;
+}
+
+.diff-line-unchanged {
+  color: var(--text);
+}
+
+.diff-line-removed {
+  background: rgba(231, 76, 60, 0.12);
+  border-left-color: var(--danger);
+}
+
+.diff-line-removed .diff-line-text {
+  color: var(--danger);
+}
+
+.diff-line-added {
+  background: rgba(39, 174, 96, 0.12);
+  border-left-color: var(--success);
+}
+
+.diff-line-added .diff-line-text {
+  color: var(--success);
+}
+
+/* Inline diff highlight */
+.diff-line-highlight {
+  background: rgba(241, 196, 15, 0.25);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+/* Folded same-content block */
+.diff-fold {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition), color var(--transition);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-fold:hover {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.diff-fold-arrow {
+  margin-right: 6px;
+  font-size: 10px;
+}
+
+/* --- Responsive for new views --- */
+@media (max-width: 640px) {
+  .hm-panels {
+    flex-direction: column;
+  }
+
+  .hm-arrow {
+    transform: rotate(90deg);
+    padding-top: 0;
+    justify-content: center;
+  }
+
+  .diff-drop-row {
+    flex-direction: column;
+  }
+
+  .diff-container {
+    flex-direction: column;
+  }
+
+  .diff-divider {
+    width: 100%;
+    height: 1px;
+  }
+}
