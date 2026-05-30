@@ -12,6 +12,8 @@
 | 页面操作 | 缩略图预览、拖拽排序、旋转（90°/180°/270°）、删除单页或指定区间 |
 | 拆分PDF | 按页码范围将 PDF 拆分为多个独立文件 |
 | 合并PDF | 拖拽排序多个 PDF，支持原始大小拼接和统一缩放到 A4 两种模式 |
+| HTML/Markdown互转 | HTML 与 Markdown 双向转换，支持拖拽导入文件、粘贴内容、复制结果、导出文件 |
+| 文件对比 | 并排对比两个文件差异，相同内容折叠、差异颜色区分，支持 .txt/.md/.html/.docx/.pptx 格式，可导出 HTML 对比报告 |
 | 自定义输出目录 | 每个功能均可选择输出目录，不选则默认输出到源文件同目录 |
 | 批量处理 | 多文件统一参数后批量转换 |
 | 密码解锁 | 遇到加密 PDF 弹出密码输入框解锁 |
@@ -56,6 +58,7 @@ Pillow==10.4.0
 pytesseract==0.3.13
 pywebview==6.2.1
 pyinstaller==6.20.0
+python-pptx==1.0.2
 ```
 
 ## 快速开始
@@ -146,6 +149,32 @@ python main.py
 5. （可选）点击「选择」按钮指定输出目录，不选则默认输出到源文件同目录
 6. 点击「开始合并」
 
+### HTML/Markdown互转
+
+1. 点击「HTML/Markdown互转」
+2. 选择转换方向：顶部 Tab 切换「HTML → Markdown」或「Markdown → HTML」
+3. 输入内容（三种方式）：
+   - 拖拽文件到上传区（HTML 方向支持 .html/.htm，Markdown 方向支持 .md）
+   - 点击上传区选择文件
+   - 直接在左侧文本框粘贴或编辑内容
+4. 点击「开始转换」，右侧文本框显示转换结果
+5. 点击「复制」将结果复制到剪贴板，或点击「导出文件」保存到磁盘
+
+### 文件对比
+
+1. 点击「文件对比」
+2. 分别在左侧（文件 A）和右侧（文件 B）拖拽或选择文件
+   - 支持 .txt、.md、.html、.htm、.docx、.pptx 格式
+   - Word/PPT 文件自动提取文本内容进行对比
+3. 两个文件选择后自动开始对比，结果显示在并排视图中：
+   - **相同内容**折叠为一行摘要（如"相同内容 (15行)"），点击可展开
+   - **删除行**（仅文件A有）红色背景
+   - **新增行**（仅文件B有）绿色背景
+4. 使用工具栏按钮：
+   - 「展开全部」展开所有折叠的相同内容
+   - 「折叠相同」重新折叠
+   - 「导出报告」保存为独立 HTML 文件，可在浏览器中打开
+
 ### 加密PDF处理
 
 当操作加密 PDF 时，会自动弹出密码输入框。输入正确密码后即可正常处理。
@@ -201,11 +230,13 @@ czy_pdf2word/
 │   ├── pdf_engine.py        # PDF 引擎（PyMuPDF：读写/渲染/合并/拆分/页面操作/加密）
 │   ├── image_engine.py      # 图片引擎（图片转PDF：A4/原始比例/居中/DPI）
 │   ├── word_engine.py       # Word 引擎（python-docx 生成 .docx）
-│   └── ocr_engine.py        # OCR 引擎（Tesseract 中英文识别）
+│   ├── ocr_engine.py        # OCR 引擎（Tesseract 中英文识别）
+│   └── diff_engine.py       # 对比引擎（docx/pptx/txt/md/html 文本提取）
 ├── ui/
 │   ├── index.html           # 单页应用 HTML
 │   ├── css/style.css        # 完整样式（浅色/深色主题）
-│   └── js/app.js            # 前端逻辑（路由/拖拽/排序/API调用）
+│   ├── js/app.js            # 前端逻辑（路由/拖拽/排序/API调用）
+│   └── js/libs/             # 前端第三方库（marked/turndown/jsdiff）
 ├── utils/
 │   ├── config.py            # 配置（Tesseract路径/窗口尺寸）
 │   └── file_utils.py        # 文件工具（输出路径/临时目录）
@@ -221,6 +252,9 @@ czy_pdf2word/
 | GUI | PyWebView + HTML/CSS/JS | 美观现代的图形界面 |
 | PDF核心 | PyMuPDF (fitz) | PDF 读写、渲染、合并、拆分、页面操作 |
 | Word生成 | python-docx | 生成可编辑 .docx 文件 |
+| PPT提取 | python-pptx | 提取 .pptx 文件文本内容用于对比 |
+| HTML/MD转换 | marked.js + turndown.js | 前端 Markdown↔HTML 双向转换 |
+| 文件对比 | jsdiff | 前端文本差异计算与渲染 |
 | 图片处理 | Pillow | 图片缩放、格式转换 |
 | OCR | Tesseract + pytesseract | 扫描件文字识别（中英文） |
 | 打包 | PyInstaller | 打包为单文件可执行 |
