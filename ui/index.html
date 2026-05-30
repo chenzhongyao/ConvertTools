@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PDF全能工具箱</title>
   <link rel="stylesheet" href="css/style.css">
+  <script src="js/libs/marked.min.js"></script>
+  <script src="js/libs/turndown.min.js"></script>
+  <script src="js/libs/diff.min.js"></script>
 </head>
 <body>
 
@@ -90,6 +93,26 @@
           <div class="feature-info">
             <h3>合并PDF</h3>
             <p>将多个PDF文件合并为一个文档</p>
+          </div>
+        </div>
+
+        <div class="feature-card" data-view="viewHtmlMarkdown">
+          <div class="feature-icon" style="background:linear-gradient(135deg,#16A085,#0E6655);">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/><line x1="14" y1="4" x2="10" y2="20"/></svg>
+          </div>
+          <div class="feature-info">
+            <h3>HTML/Markdown互转</h3>
+            <p>HTML与Markdown格式双向转换</p>
+          </div>
+        </div>
+
+        <div class="feature-card" data-view="viewFileDiff">
+          <div class="feature-icon" style="background:linear-gradient(135deg,#6C5CE7,#4834D4);">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/><line x1="8" y1="8" x2="8" y2="8.01"/><line x1="16" y1="8" x2="16" y2="8.01"/><line x1="8" y1="12" x2="8" y2="12.01"/><line x1="16" y1="12" x2="16" y2="12.01"/><line x1="8" y1="16" x2="8" y2="16.01"/><line x1="16" y1="16" x2="16" y2="16.01"/></svg>
+          </div>
+          <div class="feature-info">
+            <h3>文件对比</h3>
+            <p>对比两个文件的差异，支持多种格式</p>
           </div>
         </div>
       </div>
@@ -370,6 +393,126 @@
             <div class="progress-bar-fill" style="width:0%"></div>
           </div>
           <p class="progress-text">准备中...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== HTML / Markdown Converter View ====== -->
+    <section id="viewHtmlMarkdown" class="view">
+      <div class="view-container">
+        <!-- Direction Tabs -->
+        <div class="direction-tabs">
+          <button class="direction-tab active" data-direction="html2md">HTML → Markdown</button>
+          <button class="direction-tab" data-direction="md2html">Markdown → HTML</button>
+        </div>
+
+        <!-- Drop Zone -->
+        <div class="drop-zone" id="dropHtmlMarkdown">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p id="hmDropText">拖拽HTML文件到此处</p>
+          <span class="drop-hint" id="hmDropHint">支持 .html / .htm 文件，或点击选择</span>
+          <input type="file" accept=".html,.htm" style="display:none">
+        </div>
+
+        <!-- Input Area -->
+        <div class="hm-panels">
+          <div class="hm-panel">
+            <div class="hm-panel-header">
+              <span id="hmInputLabel">HTML 源码</span>
+              <button class="btn btn-secondary btn-sm" id="btnClearInput" title="清空">清空</button>
+            </div>
+            <textarea id="hmInputArea" class="hm-textarea" placeholder="在此粘贴或编辑内容，也可拖入文件..." spellcheck="false"></textarea>
+          </div>
+
+          <div class="hm-arrow">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </div>
+
+          <div class="hm-panel">
+            <div class="hm-panel-header">
+              <span id="hmOutputLabel">Markdown</span>
+              <button class="btn btn-secondary btn-sm" id="btnCopyOutput" title="复制结果">复制</button>
+            </div>
+            <textarea id="hmOutputArea" class="hm-textarea" placeholder="转换结果..." spellcheck="false" readonly></textarea>
+          </div>
+        </div>
+
+        <!-- Settings -->
+        <div class="settings-group">
+          <div class="setting-item">
+            <label>输出目录</label>
+            <div class="output-dir-row">
+              <input type="text" id="outputDirHtmlMarkdown" placeholder="与源文件同目录" readonly>
+              <button class="btn btn-secondary btn-sm" onclick="selectOutputDir('outputDirHtmlMarkdown')">选择</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button class="btn btn-primary btn-lg" id="btnStartHtmlMarkdown">开始转换</button>
+          <button class="btn btn-secondary btn-lg" id="btnExportHtmlMarkdown" style="display:none;">导出文件</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== File Diff View ====== -->
+    <section id="viewFileDiff" class="view">
+      <div class="view-container" style="max-width:960px;">
+        <!-- Two Drop Zones Side by Side -->
+        <div class="diff-drop-row">
+          <div class="drop-zone diff-drop-zone" id="dropDiffLeft">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <p>文件 A</p>
+            <span class="drop-hint">拖拽文件或点击选择</span>
+            <input type="file" accept=".txt,.md,.html,.htm,.docx,.pptx" style="display:none">
+          </div>
+          <div class="drop-zone diff-drop-zone" id="dropDiffRight">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <p>文件 B</p>
+            <span class="drop-hint">拖拽文件或点击选择</span>
+            <input type="file" accept=".txt,.md,.html,.htm,.docx,.pptx" style="display:none">
+          </div>
+        </div>
+
+        <!-- File Names -->
+        <div class="diff-file-info" id="diffFileInfo" style="display:none;">
+          <span id="diffFileNameA" class="diff-file-name"></span>
+          <span class="diff-vs">vs</span>
+          <span id="diffFileNameB" class="diff-file-name"></span>
+        </div>
+
+        <!-- Diff Result Area -->
+        <div class="diff-result" id="diffResult" style="display:none;">
+          <div class="diff-toolbar">
+            <span class="diff-summary" id="diffSummary"></span>
+            <div class="diff-toolbar-actions">
+              <button class="btn btn-secondary btn-sm" id="btnExpandAll">展开全部</button>
+              <button class="btn btn-secondary btn-sm" id="btnCollapseAll">折叠相同</button>
+              <button class="btn btn-primary btn-sm" id="btnExportDiff">导出报告</button>
+            </div>
+          </div>
+          <div class="diff-container" id="diffContainer">
+            <div class="diff-pane" id="diffPaneA">
+              <div class="diff-pane-header">文件 A</div>
+              <div class="diff-pane-content" id="diffContentA"></div>
+            </div>
+            <div class="diff-divider"></div>
+            <div class="diff-pane" id="diffPaneB">
+              <div class="diff-pane-header">文件 B</div>
+              <div class="diff-pane-content" id="diffContentB"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Settings -->
+        <div class="settings-group" id="diffSettings" style="display:none;">
+          <div class="setting-item">
+            <label>输出目录</label>
+            <div class="output-dir-row">
+              <input type="text" id="outputDirFileDiff" placeholder="与源文件同目录" readonly>
+              <button class="btn btn-secondary btn-sm" onclick="selectOutputDir('outputDirFileDiff')">选择</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
