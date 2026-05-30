@@ -14,6 +14,9 @@
       viewImageToPdf: [],
       viewMergePdf: [],
       viewSplitPdf: [],
+      viewHtmlMarkdown: [],
+      viewFileDiffLeft: [],
+      viewFileDiffRight: [],
     },
     pageOrder: [],       // array of page indices for Page Manager
     pageRotations: {},   // { pageIndex: degrees }
@@ -22,6 +25,9 @@
     passwordCallback: null,
     suppressClick: false,   // prevent click handler after drag
     defaultOutputDir: '',   // persisted default output directory
+    htmlMdDirection: 'html2md',
+    hmOutputContent: '',
+    hmSourceFileName: '',
   };
 
   const viewTitles = {
@@ -32,6 +38,8 @@
     viewPageManager: '页面操作',
     viewMergePdf: '合并PDF',
     viewSplitPdf: '拆分PDF',
+    viewHtmlMarkdown: 'HTML/Markdown互转',
+    viewFileDiff: '文件对比',
   };
 
   // ---- DOM Refs ----
@@ -53,6 +61,8 @@
     'outputDirPageManager',
     'outputDirSplitPdf',
     'outputDirMergePdf',
+    'outputDirHtmlMarkdown',
+    'outputDirFileDiff',
   ];
 
   async function loadDefaultOutputDir() {
@@ -377,6 +387,20 @@
       const settingsEl = $('#splitSettings');
       if (settingsEl && state.files[viewId].length > 0) settingsEl.style.display = 'block';
     }
+
+    // HTML/Markdown converter: single file, read content
+    if (viewId === 'viewHtmlMarkdown' && state.files[viewId].length > 0) {
+      loadHtmlMdFileContent();
+    }
+
+    // File Diff: render file list and trigger comparison
+    if (viewId === 'viewFileDiffLeft' || viewId === 'viewFileDiffRight') {
+      renderDiffFileList(viewId);
+      updateDiffFileInfo();
+      if (state.files.viewFileDiffLeft.length > 0 && state.files.viewFileDiffRight.length > 0) {
+        startFileDiff();
+      }
+    }
   }
 
   function removeFile(viewId, index) {
@@ -386,6 +410,10 @@
 
     if (viewId === 'viewMergePdf') checkMergePageSizes();
     if (viewId === 'viewImageToPdf') updateBaseImageSelector();
+    if (viewId === 'viewFileDiffLeft' || viewId === 'viewFileDiffRight') {
+      renderDiffFileList(viewId);
+      updateDiffFileInfo();
+    }
   }
 
   function formatSize(bytes) {
@@ -574,6 +602,9 @@
   setupDropZone('dropPageManager', 'viewPageManager', '.pdf', false);
   setupDropZone('dropMergePdf', 'viewMergePdf', '.pdf');
   setupDropZone('dropSplitPdf', 'viewSplitPdf', '.pdf', false);
+  setupDropZone('dropHtmlMarkdown', 'viewHtmlMarkdown', '.html,.htm,.md');
+  setupDropZone('dropDiffLeft', 'viewFileDiffLeft', '.txt,.md,.html,.htm,.docx,.pptx', false);
+  setupDropZone('dropDiffRight', 'viewFileDiffRight', '.txt,.md,.html,.htm,.docx,.pptx', false);
 
   // ---- Page Mode Toggle (Image to PDF) ----
   $('#pageMode').addEventListener('change', () => {
@@ -1270,6 +1301,453 @@
       alert('发生错误: ' + err.message);
     }
   }
+
+  // ---- Direction Tabs (HTML/Markdown Converter) ----
+  $$('.direction-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      $$('.direction-tab').forEach((t) => t.classList.remove('active'));
+      tab.classList.add('active');
+      state.htmlMdDirection = tab.dataset.direction;
+      updateHtmlMdLabels();
+      state.files.viewHtmlMarkdown = [];
+      renderFileList('viewHtmlMarkdown');
+      $('#hmInputArea').value = '';
+      $('#hmOutputArea').value = '';
+      state.hmOutputContent = '';
+      state.hmSourceFileName = '';
+      $('#btnExportHtmlMarkdown').style.display = 'none';
+    });
+  });
+
+  function updateHtmlMdLabels() {
+    const dir = state.htmlMdDirection;
+    if (dir === 'html2md') {
+      $('#hmInputLabel').textContent = 'HTML 源码';
+      $('#hmOutputLabel').textContent = 'Markdown';
+      $('#hmDropText').textContent = '拖拽HTML文件到此处';
+      $('#hmDropHint').textContent = '支持 .html / .htm 文件，或点击选择';
+      $('#dropHtmlMarkdown input').setAttribute('accept', '.html,.htm');
+    } else {
+      $('#hmInputLabel').textContent = 'Markdown';
+      $('#hmOutputLabel').textContent = 'HTML';
+      $('#hmDropText').textContent = '拖拽Markdown文件到此处';
+      $('#hmDropHint').textContent = '支持 .md 文件，或点击选择';
+      $('#dropHtmlMarkdown input').setAttribute('accept', '.md');
+    }
+  }
+
+  async function loadHtmlMdFileContent() {
+    const files = state.files.viewHtmlMarkdown;
+    if (!files.length) return;
+    const fpath = files[0].path;
+    state.hmSourceFileName = files[0].name;
+
+    if (window.pywebview && pywebview.api) {
+      try {
+        const result = await pywebview.api.read_text_file({ file_path: fpath });
+        if (result.success) {
+          $('#hmInputArea').value = result.content;
+        } else {
+          alert(result.error || '读取文件失败');
+        }
+      } catch (err) {
+        alert('读取文件失败: ' + err.message);
+      }
+    }
+  }
+
+  $('#btnClearInput').addEventListener('click', () => {
+    $('#hmInputArea').value = '';
+    $('#hmOutputArea').value = '';
+    state.hmOutputContent = '';
+    state.files.viewHtmlMarkdown = [];
+    renderFileList('viewHtmlMarkdown');
+    state.hmSourceFileName = '';
+    $('#btnExportHtmlMarkdown').style.display = 'none';
+  });
+
+  $('#btnStartHtmlMarkdown').addEventListener('click', () => {
+    const input = $('#hmInputArea').value;
+    if (!input.trim()) {
+      alert('请输入或导入内容');
+      return;
+    }
+
+    let output = '';
+    if (state.htmlMdDirection === 'html2md') {
+      const turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+      output = turndownService.turndown(input);
+    } else {
+      output = marked.parse(input);
+    }
+
+    $('#hmOutputArea').value = output;
+    state.hmOutputContent = output;
+    $('#btnExportHtmlMarkdown').style.display = 'inline-flex';
+    showSuccess('转换完成！');
+  });
+
+  $('#btnCopyOutput').addEventListener('click', () => {
+    const text = $('#hmOutputArea').value;
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      showSuccess('已复制到剪贴板');
+    }).catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showSuccess('已复制到剪贴板');
+    });
+  });
+
+  $('#btnExportHtmlMarkdown').addEventListener('click', async () => {
+    if (!state.hmOutputContent) return;
+
+    const isHtml2Md = state.htmlMdDirection === 'html2md';
+    const defaultName = state.hmSourceFileName
+      ? state.hmSourceFileName.replace(/\.[^.]+$/, isHtml2Md ? '.md' : '.html')
+      : (isHtml2Md ? 'output.md' : 'output.html');
+
+    const outputDir = getOutputDir('outputDirHtmlMarkdown');
+    let savePath;
+    if (outputDir) {
+      savePath = outputDir + '/' + defaultName;
+    } else if (state.files.viewHtmlMarkdown.length > 0 && state.files.viewHtmlMarkdown[0].source_dir) {
+      savePath = state.files.viewHtmlMarkdown[0].source_dir + '/' + defaultName;
+    } else {
+      savePath = defaultName;
+    }
+
+    if (window.pywebview && pywebview.api) {
+      try {
+        const result = await pywebview.api.save_text_file({ content: state.hmOutputContent, file_path: savePath });
+        if (result.success) {
+          showSuccess('文件已保存至: ' + result.file_path);
+        } else {
+          alert(result.error || '保存失败');
+        }
+      } catch (err) {
+        alert('保存失败: ' + err.message);
+      }
+    }
+  });
+
+  // ---- File Diff ----
+  function updateDiffFileInfo() {
+    const leftFiles = state.files.viewFileDiffLeft;
+    const rightFiles = state.files.viewFileDiffRight;
+    const infoEl = $('#diffFileInfo');
+
+    if (leftFiles.length > 0 || rightFiles.length > 0) {
+      infoEl.style.display = 'flex';
+      $('#diffFileNameA').textContent = leftFiles.length ? leftFiles[0].name : '未选择';
+      $('#diffFileNameB').textContent = rightFiles.length ? rightFiles[0].name : '未选择';
+    } else {
+      infoEl.style.display = 'none';
+    }
+  }
+
+  function renderDiffFileList(viewId) {
+    const isLeft = viewId === 'viewFileDiffLeft';
+    const zone = isLeft ? $('#dropDiffLeft') : $('#dropDiffRight');
+    const files = state.files[viewId] || [];
+
+    if (files.length > 0) {
+      zone.innerHTML = `<div style="padding:8px 0;font-size:13px;font-weight:500;color:var(--text);">${escapeHtml(files[0].name)}<button class="file-remove" style="margin-left:8px;width:22px;height:22px;border:none;border-radius:50%;background:transparent;color:var(--text-muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;" data-view="${viewId}" title="移除"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>`;
+      zone.querySelector('.file-remove').addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.files[viewId] = [];
+        resetDiffDropZone(viewId);
+        updateDiffFileInfo();
+        $('#diffResult').style.display = 'none';
+        $('#diffSettings').style.display = 'none';
+      });
+    } else {
+      resetDiffDropZone(viewId);
+    }
+  }
+
+  function resetDiffDropZone(viewId) {
+    const isLeft = viewId === 'viewFileDiffLeft';
+    const zone = isLeft ? $('#dropDiffLeft') : $('#dropDiffRight');
+    const label = isLeft ? '文件 A' : '文件 B';
+    const accept = '.txt,.md,.html,.htm,.docx,.pptx';
+    zone.innerHTML = `
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <p>${label}</p>
+      <span class="drop-hint">拖拽文件或点击选择</span>
+      <input type="file" accept="${accept}" style="display:none">`;
+    // Re-setup drop zone events
+    zone.addEventListener('dragover', (e) => {
+      if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        zone.classList.add('drag-over');
+      }
+    });
+    zone.addEventListener('dragleave', (e) => {
+      if (!zone.contains(e.relatedTarget)) {
+        zone.classList.remove('drag-over');
+      }
+    });
+    zone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.classList.remove('drag-over');
+      state.suppressClick = true;
+      setTimeout(() => { state.suppressClick = false; }, 300);
+      const files = Array.from(e.dataTransfer.files);
+      if (!files.length) return;
+      const hasPaths = files.some((f) => f.path);
+      if (hasPaths) {
+        addFiles(viewId, files, false);
+        return;
+      }
+      if (window.pywebview && pywebview.api && pywebview.api.save_temp_file) {
+        const acceptedExts = accept.split(',').map((f) => f.replace(/^\*?\./, '').trim().toLowerCase()).filter(Boolean);
+        const fileObjects = [];
+        for (const file of files) {
+          const ext = file.name.split('.').pop().toLowerCase();
+          if (acceptedExts.length && !acceptedExts.includes(ext)) continue;
+          try {
+            const base64 = await readFileAsBase64(file);
+            const result = await pywebview.api.save_temp_file(file.name, base64);
+            const tmpPath = (typeof result === 'string') ? result : result.path;
+            const sourceDir = (typeof result === 'string') ? '' : (result.source_dir || '');
+            fileObjects.push({ name: file.name, path: tmpPath, source_dir: sourceDir, size: file.size });
+          } catch (err) {
+            console.warn('Failed to save dropped file:', file.name, err);
+          }
+        }
+        if (fileObjects.length) {
+          addFiles(viewId, fileObjects, true);
+        }
+      }
+    });
+    zone.addEventListener('click', (e) => {
+      if (state.suppressClick) return;
+      if (e.target.closest('.file-remove')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openPywebviewFileDialog(viewId, accept);
+    });
+  }
+
+  async function startFileDiff() {
+    const leftPath = state.files.viewFileDiffLeft[0]?.path;
+    const rightPath = state.files.viewFileDiffRight[0]?.path;
+
+    if (!leftPath || !rightPath) return;
+
+    showLoading('正在提取文件内容...');
+
+    try {
+      const [resultA, resultB] = await Promise.all([
+        pywebview.api.extract_file_text({ file_path: leftPath }),
+        pywebview.api.extract_file_text({ file_path: rightPath }),
+      ]);
+
+      hideLoading();
+
+      if (!resultA.success) {
+        alert('文件A读取失败: ' + (resultA.error || '未知错误'));
+        return;
+      }
+      if (!resultB.success) {
+        alert('文件B读取失败: ' + (resultB.error || '未知错误'));
+        return;
+      }
+
+      renderDiffResult(resultA.content, resultB.content);
+    } catch (err) {
+      hideLoading();
+      alert('对比失败: ' + err.message);
+    }
+  }
+
+  function renderDiffResult(textA, textB) {
+    const changes = Diff.diffLines(textA, textB);
+
+    let htmlA = '';
+    let htmlB = '';
+    let lineNumA = 1;
+    let lineNumB = 1;
+    let addedCount = 0;
+    let removedCount = 0;
+
+    for (const change of changes) {
+      const lines = change.value.split('\n');
+      if (lines.length > 0 && lines[lines.length - 1] === '') {
+        lines.pop();
+      }
+
+      if (change.added) {
+        addedCount += lines.length;
+        for (const line of lines) {
+          htmlB += buildDiffLine(lineNumB++, line, 'diff-line-added');
+        }
+        for (let i = 0; i < lines.length; i++) {
+          htmlA += buildDiffLine('', '', 'diff-line-unchanged');
+        }
+      } else if (change.removed) {
+        removedCount += lines.length;
+        for (const line of lines) {
+          htmlA += buildDiffLine(lineNumA++, line, 'diff-line-removed');
+        }
+        for (let i = 0; i < lines.length; i++) {
+          htmlB += buildDiffLine('', '', 'diff-line-unchanged');
+        }
+      } else {
+        const count = lines.length;
+        const foldId = 'fold-' + lineNumA + '-' + lineNumB;
+
+        htmlA += buildFoldLine(foldId, count, lineNumA, lineNumA + count - 1);
+        htmlB += buildFoldLine(foldId, count, lineNumB, lineNumB + count - 1);
+
+        let expandedA = '';
+        let expandedB = '';
+        for (const line of lines) {
+          expandedA += buildDiffLine(lineNumA++, line, 'diff-line-unchanged');
+          expandedB += buildDiffLine(lineNumB++, line, 'diff-line-unchanged');
+        }
+        htmlA += `<div class="diff-fold-content" id="${foldId}-A" style="display:none;">${expandedA}</div>`;
+        htmlB += `<div class="diff-fold-content" id="${foldId}-B" style="display:none;">${expandedB}</div>`;
+      }
+    }
+
+    $('#diffContentA').innerHTML = htmlA;
+    $('#diffContentB').innerHTML = htmlB;
+
+    $('#diffSummary').textContent = `+${addedCount} 行新增  -${removedCount} 行删除`;
+
+    $('#diffResult').style.display = 'block';
+    $('#diffSettings').style.display = 'block';
+
+    setupDiffSyncScroll();
+    setupFoldClickHandlers();
+  }
+
+  function buildDiffLine(lineNum, text, className) {
+    const escapedText = escapeHtml(text);
+    return `<div class="diff-line ${className}"><span class="diff-line-num">${lineNum}</span><span class="diff-line-text">${escapedText}</span></div>`;
+  }
+
+  function buildFoldLine(foldId, count, startLine, endLine) {
+    return `<div class="diff-fold" data-fold-id="${foldId}"><span class="diff-fold-arrow">▸</span>相同内容 (${count}行, 第${startLine}-${endLine}行)</div>`;
+  }
+
+  function setupFoldClickHandlers() {
+    $$('.diff-fold').forEach((fold) => {
+      fold.addEventListener('click', () => {
+        const foldId = fold.dataset.foldId;
+        const contentA = document.getElementById(foldId + '-A');
+        const contentB = document.getElementById(foldId + '-B');
+        if (!contentA || !contentB) return;
+
+        const isHidden = contentA.style.display === 'none';
+        contentA.style.display = isHidden ? 'block' : 'none';
+        contentB.style.display = isHidden ? 'block' : 'none';
+
+        const arrow = fold.querySelector('.diff-fold-arrow');
+        if (arrow) arrow.textContent = isHidden ? '▾' : '▸';
+      });
+    });
+  }
+
+  function setupDiffSyncScroll() {
+    const paneA = $('#diffContentA');
+    const paneB = $('#diffContentB');
+    let syncing = false;
+
+    paneA.addEventListener('scroll', () => {
+      if (syncing) return;
+      syncing = true;
+      paneB.scrollTop = paneA.scrollTop;
+      syncing = false;
+    });
+
+    paneB.addEventListener('scroll', () => {
+      if (syncing) return;
+      syncing = true;
+      paneA.scrollTop = paneB.scrollTop;
+      syncing = false;
+    });
+  }
+
+  $('#btnExpandAll').addEventListener('click', () => {
+    $$('.diff-fold-content').forEach((el) => { el.style.display = 'block'; });
+    $$('.diff-fold-arrow').forEach((el) => { el.textContent = '▾'; });
+  });
+
+  $('#btnCollapseAll').addEventListener('click', () => {
+    $$('.diff-fold-content').forEach((el) => { el.style.display = 'none'; });
+    $$('.diff-fold-arrow').forEach((el) => { el.textContent = '▸'; });
+  });
+
+  $('#btnExportDiff').addEventListener('click', async () => {
+    const container = $('#diffContainer');
+    if (!container) return;
+
+    const nameA = state.files.viewFileDiffLeft[0]?.name || 'File A';
+    const nameB = state.files.viewFileDiffRight[0]?.name || 'File B';
+    const summary = $('#diffSummary').textContent;
+    const now = new Date().toLocaleString('zh-CN');
+
+    const reportHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>文件对比报告</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;margin:0;padding:20px;background:#f7f8fa;color:#2c3e50;}
+h1{font-size:20px;margin-bottom:4px;}
+.meta{font-size:13px;color:#7f8c8d;margin-bottom:20px;}
+.diff-container{display:flex;border:1px solid #e1e8ed;border-radius:10px;overflow:hidden;background:#fff;}
+.diff-pane{flex:1;min-width:0;overflow:auto;}
+.diff-pane-header{padding:8px 14px;font-size:12px;font-weight:600;color:#7f8c8d;text-transform:uppercase;background:#eef1f5;border-bottom:1px solid #e1e8ed;}
+.diff-divider{width:1px;background:#e1e8ed;}
+.diff-line{display:flex;min-height:22px;padding:0 8px 0 0;border-left:3px solid transparent;font-family:monospace;font-size:12px;line-height:22px;}
+.diff-line-num{width:44px;min-width:44px;text-align:right;padding-right:8px;color:#b0bec5;user-select:none;font-size:11px;}
+.diff-line-text{flex:1;white-space:pre-wrap;word-break:break-all;padding-left:4px;}
+.diff-line-removed{background:rgba(231,76,60,0.12);border-left-color:#e74c3c;}
+.diff-line-removed .diff-line-text{color:#e74c3c;}
+.diff-line-added{background:rgba(39,174,96,0.12);border-left-color:#27ae60;}
+.diff-line-added .diff-line-text{color:#27ae60;}
+.diff-line-unchanged{color:#2c3e50;}
+.diff-fold{display:flex;align-items:center;justify-content:center;padding:6px 12px;background:#eef1f5;color:#b0bec5;font-size:11px;}
+.diff-fold-content{display:none;}
+</style>
+</head>
+<body>
+<h1>文件对比报告</h1>
+<p class="meta">${escapeHtml(nameA)} vs ${escapeHtml(nameB)} — ${summary} — ${now}</p>
+${container.outerHTML}
+</body>
+</html>`;
+
+    const outputDir = getOutputDir('outputDirFileDiff');
+    const defaultName = `diff_report_${Date.now()}.html`;
+    let savePath = defaultName;
+    if (outputDir) {
+      savePath = outputDir + '/' + defaultName;
+    }
+
+    if (window.pywebview && pywebview.api) {
+      try {
+        const result = await pywebview.api.save_diff_report({ content: reportHtml, file_path: savePath });
+        if (result.success) {
+          showSuccess('报告已保存至: ' + result.file_path);
+        } else {
+          alert(result.error || '保存失败');
+        }
+      } catch (err) {
+        alert('保存失败: ' + err.message);
+      }
+    }
+  });
 
   // ---- Expose for debug / external calls ----
   window.pdfToolbox = {
