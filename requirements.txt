@@ -4,3 +4,4 @@ Pillow==10.4.0
 pytesseract==0.3.13
 pywebview==6.2.1
 pyinstaller==6.20.0
+python-pptx==1.0.2

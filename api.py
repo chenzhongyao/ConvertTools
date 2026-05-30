@@ -7,6 +7,7 @@ from core.image_engine import ImageEngine
 from core.word_engine import WordEngine
 from core.ocr_engine import OcrEngine
 from utils.file_utils import get_output_path
+from core.diff_engine import DiffEngine
 
 CONFIG_PATH = os.path.join(os.path.expanduser('~'), '.pdf_toolbox_config.json')
 
@@ -327,3 +328,64 @@ class Api:
         if doc:
             doc.close()
         return {'success': not needs_pw and not err, 'error': err}
+
+    # --- Text File Read/Save ---
+
+    def read_text_file(self, params):
+        """Read a text file and return its content.
+        params: {file_path: str}
+        """
+        fpath = params.get('file_path')
+        if not fpath or not os.path.isfile(fpath):
+            return {'success': False, 'error': '文件不存在'}
+
+        for encoding in ('utf-8', 'gbk', 'gb2312', 'latin-1'):
+            try:
+                with open(fpath, 'r', encoding=encoding) as f:
+                    content = f.read()
+                return {'success': True, 'content': content}
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+
+        return {'success': False, 'error': '无法解码文件'}
+
+    def save_text_file(self, params):
+        """Save text content to a file.
+        params: {content: str, file_path: str}
+        """
+        content = params.get('content', '')
+        fpath = params.get('file_path')
+        if not fpath:
+            return {'success': False, 'error': '未指定保存路径'}
+
+        try:
+            directory = os.path.dirname(fpath)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            with open(fpath, 'w', encoding='utf-8') as f:
+                f.write(content)
+            return {'success': True, 'file_path': fpath}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    # --- File Diff ---
+
+    def extract_file_text(self, params):
+        """Extract text content from a file for diff comparison.
+        params: {file_path: str}
+        """
+        fpath = params.get('file_path')
+        if not fpath:
+            return {'success': False, 'error': '未指定文件'}
+
+        content, fmt, err = DiffEngine.extract_text(fpath)
+        if err:
+            return {'success': False, 'error': err}
+
+        return {'success': True, 'content': content, 'format': fmt}
+
+    def save_diff_report(self, params):
+        """Save a diff report as an HTML file.
+        params: {content: str, file_path: str}
+        """
+        return self.save_text_file(params)
