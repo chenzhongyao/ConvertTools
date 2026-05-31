@@ -1375,10 +1375,50 @@
 
     let output = '';
     if (state.htmlMdDirection === 'html2md') {
-      const turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+      const turndownService = new TurndownService({
+        headingStyle: 'atx',
+        codeBlockStyle: 'fenced',
+        bulletListMarker: '-'
+      });
+      // Strip inline/style tags that have no Markdown equivalent
+      const inlineElements = [
+        'span', 'font', 'center', 'strike', 'u', 'big', 'small',
+        'abbr', 'acronym', 'bdi', 'bdo', 'cite', 'dfn', 'kbd',
+        'mark', 'q', 'rp', 'rt', 'ruby', 's', 'samp', 'sub', 'sup',
+        'time', 'var', 'wbr', 'ins', 'del'
+      ];
+      inlineElements.forEach(tag => {
+        turndownService.addRule(`strip_${tag}`, {
+          filter: tag,
+          replacement: function(content) { return content; }
+        });
+      });
+      // Strip div/p/section/article/aside/header/footer/nav/main/figure/figcaption/details/summary
+      // keeping their text content
+      const blockElements = [
+        'div', 'section', 'article', 'aside', 'header', 'footer',
+        'nav', 'main', 'figure', 'figcaption', 'details', 'summary',
+        'address', 'fieldset', 'form', 'legend'
+      ];
+      blockElements.forEach(tag => {
+        turndownService.addRule(`strip_block_${tag}`, {
+          filter: tag,
+          replacement: function(content) { return '\n\n' + content + '\n\n'; }
+        });
+      });
+      // Strip table attrs but keep table structure (turndown handles table by default)
+      turndownService.addRule('strip_table_attrs', {
+        filter: ['table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'colgroup', 'col', 'caption'],
+        replacement: function(content, node, options) {
+          // Use turndown's default table handling
+          return content;
+        }
+      });
+      // Clean up multiple blank lines
       output = turndownService.turndown(input);
+      output = output.replace(/\n{3,}/g, '\n\n').trim();
     } else {
-      output = marked.parse(input);
+      output = marked.parse(input, { breaks: true, gfm: true });
     }
 
     $('#hmOutputArea').value = output;
@@ -1568,53 +1608,172 @@
     }
   }
 
+  const DIFF_CONTEXT_LINES = 10;
+
   function renderDiffResult(textA, textB) {
     const changes = Diff.diffLines(textA, textB);
 
-    let htmlA = '';
-    let htmlB = '';
+    // Build a flat list of "segments" with type and line info
+    // Each segment: { type: 'unchanged'|'removed'|'added', lines: [...], lineNumsA: [...], lineNumsB: [...] }
+    const segments = [];
     let lineNumA = 1;
     let lineNumB = 1;
-    let addedCount = 0;
-    let removedCount = 0;
 
     for (const change of changes) {
       const lines = change.value.split('\n');
       if (lines.length > 0 && lines[lines.length - 1] === '') {
         lines.pop();
       }
+      if (lines.length === 0) continue;
 
+      const seg = { lines: lines, lineNumsA: [], lineNumsB: [], type: 'unchanged' };
       if (change.added) {
-        addedCount += lines.length;
-        for (const line of lines) {
-          htmlB += buildDiffLine(lineNumB++, line, 'diff-line-added');
-        }
+        seg.type = 'added';
+        for (let i = 0; i < lines.length; i++) seg.lineNumsB.push(lineNumB++);
+      } else if (change.removed) {
+        seg.type = 'removed';
+        for (let i = 0; i < lines.length; i++) seg.lineNumsA.push(lineNumA++);
+      } else {
+        seg.type = 'unchanged';
         for (let i = 0; i < lines.length; i++) {
+          seg.lineNumsA.push(lineNumA++);
+          seg.lineNumsB.push(lineNumB++);
+        }
+      }
+      segments.push(seg);
+    }
+
+    // Determine which unchanged segments should be shown (within CONTEXT_LINES of a diff)
+    const shouldShow = new Array(segments.length).fill(false);
+    for (let i = 0; i < segments.length; i++) {
+      if (segments[i].type !== 'unchanged') {
+        // Mark this segment and nearby unchanged segments
+        for (let j = Math.max(0, i - 1); j <= Math.min(segments.length - 1, i + 1); j++) {
+          if (segments[j].type === 'unchanged') {
+            shouldShow[j] = true;
+          } else {
+            shouldShow[j] = true; // always show diff segments
+          }
+        }
+      }
+    }
+    // Also always show diff segments
+    for (let i = 0; i < segments.length; i++) {
+      if (segments[i].type !== 'unchanged') shouldShow[i] = true;
+    }
+
+    // For shown unchanged segments, trim to only CONTEXT_LINES around diff edges
+    // Build final render plan
+    const renderParts = []; // each part: { type, lines, lineNumsA, lineNumsB } or { type: 'fold', count, startA, endA, startB, endB }
+
+    let htmlA = '';
+    let htmlB = '';
+    let addedCount = 0;
+    let removedCount = 0;
+    let curLineA = 1;
+    let curLineB = 1;
+
+    for (let si = 0; si < segments.length; si++) {
+      const seg = segments[si];
+
+      if (seg.type === 'added') {
+        addedCount += seg.lines.length;
+        for (let i = 0; i < seg.lines.length; i++) {
+          htmlB += buildDiffLine(seg.lineNumsB[i], seg.lines[i], 'diff-line-added');
           htmlA += buildDiffLine('', '', 'diff-line-unchanged');
         }
-      } else if (change.removed) {
-        removedCount += lines.length;
-        for (const line of lines) {
-          htmlA += buildDiffLine(lineNumA++, line, 'diff-line-removed');
-        }
-        for (let i = 0; i < lines.length; i++) {
+        curLineA = seg.lineNumsA.length ? seg.lineNumsA[seg.lineNumsA.length - 1] + 1 : curLineA;
+        curLineB = seg.lineNumsB[seg.lineNumsB.length - 1] + 1;
+      } else if (seg.type === 'removed') {
+        removedCount += seg.lines.length;
+        for (let i = 0; i < seg.lines.length; i++) {
+          htmlA += buildDiffLine(seg.lineNumsA[i], seg.lines[i], 'diff-line-removed');
           htmlB += buildDiffLine('', '', 'diff-line-unchanged');
         }
+        curLineA = seg.lineNumsA[seg.lineNumsA.length - 1] + 1;
+        curLineB = seg.lineNumsB.length ? seg.lineNumsB[seg.lineNumsB.length - 1] + 1 : curLineB;
       } else {
-        const count = lines.length;
-        const foldId = 'fold-' + lineNumA + '-' + lineNumB;
+        // Unchanged segment
+        const hasPrevDiff = si > 0 && segments[si - 1].type !== 'unchanged';
+        const hasNextDiff = si < segments.length - 1 && segments[si + 1].type !== 'unchanged';
 
-        htmlA += buildFoldLine(foldId, count, lineNumA, lineNumA + count - 1);
-        htmlB += buildFoldLine(foldId, count, lineNumB, lineNumB + count - 1);
+        if (!hasPrevDiff && !hasNextDiff) {
+          // No diff nearby at all — fold entire segment
+          const count = seg.lines.length;
+          const foldId = 'fold-' + seg.lineNumsA[0] + '-' + seg.lineNumsB[0];
+          htmlA += buildFoldLine(foldId, count, seg.lineNumsA[0], seg.lineNumsA[seg.lineNumsA.length - 1]);
+          htmlB += buildFoldLine(foldId, count, seg.lineNumsB[0], seg.lineNumsB[seg.lineNumsB.length - 1]);
+          let expandedA = '';
+          let expandedB = '';
+          for (let i = 0; i < seg.lines.length; i++) {
+            expandedA += buildDiffLine(seg.lineNumsA[i], seg.lines[i], 'diff-line-unchanged');
+            expandedB += buildDiffLine(seg.lineNumsB[i], seg.lines[i], 'diff-line-unchanged');
+          }
+          htmlA += `<div class="diff-fold-content" id="${foldId}-A" style="display:none;">${expandedA}</div>`;
+          htmlB += `<div class="diff-fold-content" id="${foldId}-B" style="display:none;">${expandedB}</div>`;
+          curLineA = seg.lineNumsA[seg.lineNumsA.length - 1] + 1;
+          curLineB = seg.lineNumsB[seg.lineNumsB.length - 1] + 1;
+        } else {
+          // Has at least one diff neighbor — split into fold / context parts
+          const totalLines = seg.lines.length;
+          let startContext = 0;   // lines to show before prev diff
+          let endContext = 0;     // lines to show after next diff
+          let foldStart = 0;     // start of middle fold section
+          let foldEnd = totalLines; // end of middle fold section
 
-        let expandedA = '';
-        let expandedB = '';
-        for (const line of lines) {
-          expandedA += buildDiffLine(lineNumA++, line, 'diff-line-unchanged');
-          expandedB += buildDiffLine(lineNumB++, line, 'diff-line-unchanged');
+          if (hasPrevDiff && hasNextDiff) {
+            startContext = Math.min(DIFF_CONTEXT_LINES, totalLines);
+            endContext = Math.min(DIFF_CONTEXT_LINES, totalLines - startContext);
+            foldStart = startContext;
+            foldEnd = totalLines - endContext;
+            if (foldEnd <= foldStart) {
+              // Not enough lines to fold in middle — show all
+              startContext = totalLines;
+              endContext = 0;
+              foldStart = 0;
+              foldEnd = 0;
+            }
+          } else if (hasPrevDiff) {
+            startContext = Math.min(DIFF_CONTEXT_LINES, totalLines);
+            foldStart = startContext;
+            foldEnd = totalLines;
+          } else if (hasNextDiff) {
+            endContext = Math.min(DIFF_CONTEXT_LINES, totalLines);
+            foldStart = 0;
+            foldEnd = totalLines - endContext;
+          }
+
+          // Show leading context (after prev diff)
+          for (let i = 0; i < startContext; i++) {
+            htmlA += buildDiffLine(seg.lineNumsA[i], seg.lines[i], 'diff-line-unchanged');
+            htmlB += buildDiffLine(seg.lineNumsB[i], seg.lines[i], 'diff-line-unchanged');
+          }
+
+          // Fold middle
+          if (foldEnd > foldStart) {
+            const foldCount = foldEnd - foldStart;
+            const foldId = 'fold-' + seg.lineNumsA[foldStart] + '-' + seg.lineNumsB[foldStart];
+            htmlA += buildFoldLine(foldId, foldCount, seg.lineNumsA[foldStart], seg.lineNumsA[foldEnd - 1]);
+            htmlB += buildFoldLine(foldId, foldCount, seg.lineNumsB[foldStart], seg.lineNumsB[foldEnd - 1]);
+            let expandedA = '';
+            let expandedB = '';
+            for (let i = foldStart; i < foldEnd; i++) {
+              expandedA += buildDiffLine(seg.lineNumsA[i], seg.lines[i], 'diff-line-unchanged');
+              expandedB += buildDiffLine(seg.lineNumsB[i], seg.lines[i], 'diff-line-unchanged');
+            }
+            htmlA += `<div class="diff-fold-content" id="${foldId}-A" style="display:none;">${expandedA}</div>`;
+            htmlB += `<div class="diff-fold-content" id="${foldId}-B" style="display:none;">${expandedB}</div>`;
+          }
+
+          // Show trailing context (before next diff)
+          for (let i = totalLines - endContext; i < totalLines; i++) {
+            htmlA += buildDiffLine(seg.lineNumsA[i], seg.lines[i], 'diff-line-unchanged');
+            htmlB += buildDiffLine(seg.lineNumsB[i], seg.lines[i], 'diff-line-unchanged');
+          }
+
+          curLineA = seg.lineNumsA[seg.lineNumsA.length - 1] + 1;
+          curLineB = seg.lineNumsB[seg.lineNumsB.length - 1] + 1;
         }
-        htmlA += `<div class="diff-fold-content" id="${foldId}-A" style="display:none;">${expandedA}</div>`;
-        htmlB += `<div class="diff-fold-content" id="${foldId}-B" style="display:none;">${expandedB}</div>`;
       }
     }
 

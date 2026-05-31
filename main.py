@@ -1,6 +1,9 @@
+import os
 import webview
 from api import Api
 from utils.config import APP_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT
+
+os.environ['GI_TYPELIB_PATH'] = '/usr/lib/x86_64-linux-gnu/girepository-1.0'
 
 def main():
     api = Api()
@@ -14,7 +17,7 @@ def main():
         resizable=True,
     )
     api.set_window(window)
-    webview.start(debug=False)
+    webview.start(debug=False, gui='qt')
 
 if __name__ == '__main__':
     main()
