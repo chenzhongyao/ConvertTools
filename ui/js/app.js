@@ -1830,7 +1830,37 @@
   }
 
   // Compute inline char-level diff for paired removed/added lines
+  // For table rows (containing ' | '), compare cell-by-cell for cleaner highlighting
   function computeInlineDiff(lineA, lineB) {
+    // Detect table rows and compare cells individually
+    if (lineA.includes(' | ') && lineB.includes(' | ')) {
+      const cellsA = lineA.split(' | ');
+      const cellsB = lineB.split(' | ');
+      if (cellsA.length === cellsB.length && cellsA.length > 1) {
+        const removedParts = [];
+        const addedParts = [];
+        for (let i = 0; i < cellsA.length; i++) {
+          if (i > 0) {
+            removedParts.push({ value: ' | ', changed: false });
+            addedParts.push({ value: ' | ', changed: false });
+          }
+          const cellDiff = Diff.diffChars(cellsA[i], cellsB[i]);
+          for (const part of cellDiff) {
+            if (part.added) {
+              addedParts.push({ value: part.value, changed: true });
+            } else if (part.removed) {
+              removedParts.push({ value: part.value, changed: true });
+            } else {
+              removedParts.push({ value: part.value, changed: false });
+              addedParts.push({ value: part.value, changed: false });
+            }
+          }
+        }
+        return { removedParts, addedParts };
+      }
+    }
+
+    // Original behavior for non-table lines
     const charDiff = Diff.diffChars(lineA, lineB);
     const removedParts = [];
     const addedParts = [];
@@ -1931,6 +1961,8 @@ h1{font-size:20px;margin-bottom:4px;}
 .diff-line-unchanged{color:#2c3e50;}
 .diff-fold{display:flex;align-items:center;justify-content:center;padding:6px 12px;background:#eef1f5;color:#b0bec5;font-size:11px;}
 .diff-fold-content{display:none;}
+.diff-char-removed{background:rgba(231,76,60,0.25);border-radius:2px;padding:0 1px;color:#e74c3c;text-decoration:line-through;}
+.diff-char-added{background:rgba(39,174,96,0.25);border-radius:2px;padding:0 1px;color:#27ae60;}
 </style>
 </head>
 <body>

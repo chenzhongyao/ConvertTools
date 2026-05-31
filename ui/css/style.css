@@ -1310,19 +1310,21 @@ html, body {
 }
 
 .diff-line-removed {
+  background: rgba(231, 76, 60, 0.12);
   border-left-color: var(--danger);
 }
 
 .diff-line-removed .diff-line-text {
-  color: var(--text);
+  color: var(--danger);
 }
 
 .diff-line-added {
+  background: rgba(39, 174, 96, 0.12);
   border-left-color: var(--success);
 }
 
 .diff-line-added .diff-line-text {
-  color: var(--text);
+  color: var(--success);
 }
 
 /* Inline char-level diff highlight */
