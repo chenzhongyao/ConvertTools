@@ -1666,6 +1666,7 @@
     // Build final render plan
     const renderParts = []; // each part: { type, lines, lineNumsA, lineNumsB } or { type: 'fold', count, startA, endA, startB, endB }
 
+    // Pair consecutive removed+added segments for inline char-level diff
     let htmlA = '';
     let htmlB = '';
     let addedCount = 0;
@@ -1676,22 +1677,45 @@
     for (let si = 0; si < segments.length; si++) {
       const seg = segments[si];
 
-      if (seg.type === 'added') {
+      if (seg.type === 'removed') {
+        const nextSeg = si + 1 < segments.length ? segments[si + 1] : null;
+        if (nextSeg && nextSeg.type === 'added') {
+          // Paired: render removed+added with inline char highlights
+          const pairCount = Math.min(seg.lines.length, nextSeg.lines.length);
+          addedCount += nextSeg.lines.length;
+          removedCount += seg.lines.length;
+
+          for (let i = 0; i < pairCount; i++) {
+            const { removedParts, addedParts } = computeInlineDiff(seg.lines[i], nextSeg.lines[i]);
+            htmlA += buildDiffLineInline(seg.lineNumsA[i], 'removed', removedParts);
+            htmlB += buildDiffLineInline(nextSeg.lineNumsB[i], 'added', addedParts);
+          }
+          // Extra removed lines (no pair)
+          for (let i = pairCount; i < seg.lines.length; i++) {
+            htmlA += buildDiffLine(seg.lineNumsA[i], seg.lines[i], 'diff-line-removed');
+            htmlB += buildDiffLine('', '', 'diff-line-unchanged');
+          }
+          // Extra added lines (no pair)
+          for (let i = pairCount; i < nextSeg.lines.length; i++) {
+            htmlA += buildDiffLine('', '', 'diff-line-unchanged');
+            htmlB += buildDiffLine(nextSeg.lineNumsB[i], nextSeg.lines[i], 'diff-line-added');
+          }
+          si++; // skip the 'added' segment since we already rendered it
+        } else {
+          // Removed only (no following added)
+          removedCount += seg.lines.length;
+          for (let i = 0; i < seg.lines.length; i++) {
+            htmlA += buildDiffLine(seg.lineNumsA[i], seg.lines[i], 'diff-line-removed');
+            htmlB += buildDiffLine('', '', 'diff-line-unchanged');
+          }
+        }
+      } else if (seg.type === 'added') {
+        // Added without preceding removed
         addedCount += seg.lines.length;
         for (let i = 0; i < seg.lines.length; i++) {
-          htmlB += buildDiffLine(seg.lineNumsB[i], seg.lines[i], 'diff-line-added');
           htmlA += buildDiffLine('', '', 'diff-line-unchanged');
+          htmlB += buildDiffLine(seg.lineNumsB[i], seg.lines[i], 'diff-line-added');
         }
-        curLineA = seg.lineNumsA.length ? seg.lineNumsA[seg.lineNumsA.length - 1] + 1 : curLineA;
-        curLineB = seg.lineNumsB[seg.lineNumsB.length - 1] + 1;
-      } else if (seg.type === 'removed') {
-        removedCount += seg.lines.length;
-        for (let i = 0; i < seg.lines.length; i++) {
-          htmlA += buildDiffLine(seg.lineNumsA[i], seg.lines[i], 'diff-line-removed');
-          htmlB += buildDiffLine('', '', 'diff-line-unchanged');
-        }
-        curLineA = seg.lineNumsA[seg.lineNumsA.length - 1] + 1;
-        curLineB = seg.lineNumsB.length ? seg.lineNumsB[seg.lineNumsB.length - 1] + 1 : curLineB;
       } else {
         // Unchanged segment
         const hasPrevDiff = si > 0 && segments[si - 1].type !== 'unchanged';
@@ -1711,15 +1735,13 @@
           }
           htmlA += `<div class="diff-fold-content" id="${foldId}-A" style="display:none;">${expandedA}</div>`;
           htmlB += `<div class="diff-fold-content" id="${foldId}-B" style="display:none;">${expandedB}</div>`;
-          curLineA = seg.lineNumsA[seg.lineNumsA.length - 1] + 1;
-          curLineB = seg.lineNumsB[seg.lineNumsB.length - 1] + 1;
         } else {
           // Has at least one diff neighbor — split into fold / context parts
           const totalLines = seg.lines.length;
-          let startContext = 0;   // lines to show before prev diff
-          let endContext = 0;     // lines to show after next diff
-          let foldStart = 0;     // start of middle fold section
-          let foldEnd = totalLines; // end of middle fold section
+          let startContext = 0;
+          let endContext = 0;
+          let foldStart = 0;
+          let foldEnd = totalLines;
 
           if (hasPrevDiff && hasNextDiff) {
             startContext = Math.min(DIFF_CONTEXT_LINES, totalLines);
@@ -1727,7 +1749,6 @@
             foldStart = startContext;
             foldEnd = totalLines - endContext;
             if (foldEnd <= foldStart) {
-              // Not enough lines to fold in middle — show all
               startContext = totalLines;
               endContext = 0;
               foldStart = 0;
@@ -1770,9 +1791,6 @@
             htmlA += buildDiffLine(seg.lineNumsA[i], seg.lines[i], 'diff-line-unchanged');
             htmlB += buildDiffLine(seg.lineNumsB[i], seg.lines[i], 'diff-line-unchanged');
           }
-
-          curLineA = seg.lineNumsA[seg.lineNumsA.length - 1] + 1;
-          curLineB = seg.lineNumsB[seg.lineNumsB.length - 1] + 1;
         }
       }
     }
@@ -1792,6 +1810,41 @@
   function buildDiffLine(lineNum, text, className) {
     const escapedText = escapeHtml(text);
     return `<div class="diff-line ${className}"><span class="diff-line-num">${lineNum}</span><span class="diff-line-text">${escapedText}</span></div>`;
+  }
+
+  // Build a diff line with inline char-level highlights for changed portions
+  // lineNum: line number string, text: raw line text, type: 'removed' or 'added', highlightParts: array of {text, changed}
+  function buildDiffLineInline(lineNum, type, highlightParts) {
+    const className = type === 'removed' ? 'diff-line-removed' : 'diff-line-added';
+    const hlClass = type === 'removed' ? 'diff-char-removed' : 'diff-char-added';
+    let textHtml = '';
+    for (const part of highlightParts) {
+      const escaped = escapeHtml(part.value);
+      if (part.changed) {
+        textHtml += `<span class="${hlClass}">${escaped}</span>`;
+      } else {
+        textHtml += escaped;
+      }
+    }
+    return `<div class="diff-line ${className}"><span class="diff-line-num">${lineNum}</span><span class="diff-line-text">${textHtml}</span></div>`;
+  }
+
+  // Compute inline char-level diff for paired removed/added lines
+  function computeInlineDiff(lineA, lineB) {
+    const charDiff = Diff.diffChars(lineA, lineB);
+    const removedParts = [];
+    const addedParts = [];
+    for (const part of charDiff) {
+      if (part.added) {
+        addedParts.push({ value: part.value, changed: true });
+      } else if (part.removed) {
+        removedParts.push({ value: part.value, changed: true });
+      } else {
+        removedParts.push({ value: part.value, changed: false });
+        addedParts.push({ value: part.value, changed: false });
+      }
+    }
+    return { removedParts, addedParts };
   }
 
   function buildFoldLine(foldId, count, startLine, endLine) {

@@ -1310,24 +1310,38 @@ html, body {
 }
 
 .diff-line-removed {
-  background: rgba(231, 76, 60, 0.12);
   border-left-color: var(--danger);
 }
 
 .diff-line-removed .diff-line-text {
-  color: var(--danger);
+  color: var(--text);
 }
 
 .diff-line-added {
-  background: rgba(39, 174, 96, 0.12);
   border-left-color: var(--success);
 }
 
 .diff-line-added .diff-line-text {
+  color: var(--text);
+}
+
+/* Inline char-level diff highlight */
+.diff-char-removed {
+  background: rgba(231, 76, 60, 0.25);
+  border-radius: 2px;
+  padding: 0 1px;
+  color: var(--danger);
+  text-decoration: line-through;
+}
+
+.diff-char-added {
+  background: rgba(39, 174, 96, 0.25);
+  border-radius: 2px;
+  padding: 0 1px;
   color: var(--success);
 }
 
-/* Inline diff highlight */
+/* Legacy inline diff highlight */
 .diff-line-highlight {
   background: rgba(241, 196, 15, 0.25);
   border-radius: 2px;
