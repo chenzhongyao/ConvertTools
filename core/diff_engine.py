@@ -47,10 +47,26 @@ class DiffEngine:
     def _extract_docx(file_path):
         doc = Document(file_path)
         lines = []
-        for para in doc.paragraphs:
-            text = para.text.strip()
-            if text:
-                lines.append(text)
+        body = doc.element.body
+        for child in body:
+            tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+            if tag == 'p':
+                text = ''.join(node.text or '' for node in child.iter()
+                               if node.tag.endswith('}t')).strip()
+                if text:
+                    lines.append(text)
+            elif tag == 'tbl':
+                from docx.oxml.ns import qn
+                for tr in child.iter(qn('w:tr')):
+                    row_texts = []
+                    for tc in tr.iter(qn('w:tc')):
+                        cell_text = ''.join(
+                            t.text or '' for t in tc.iter() if t.tag.endswith('}t')
+                        ).strip()
+                        row_texts.append(cell_text)
+                    line = ' | '.join(row_texts)
+                    if line.strip(' |'):
+                        lines.append(line)
         return '\n'.join(lines)
 
     @staticmethod
